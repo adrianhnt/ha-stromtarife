@@ -1,6 +1,10 @@
 # Stromtarife
 
-Home-Assistant-Integration, um Stromverträge mit Gültigkeitszeitraum zu verwalten und die Stromkosten danach zu berechnen – für den Gesamtverbrauch (Zähler) und für einzelne Geräte.
+Home-Assistant-Integration, um Zählerstände und Stromverträge mit Gültigkeitszeitraum zu verwalten und die Stromkosten danach zu berechnen – für den Gesamtverbrauch (Zähler) und für einzelne Geräte.
+
+## Zählerstände
+
+Abgelesene Stände (Zeitpunkt, kWh, Notiz) werden in einer Tabelle gepflegt – auch nachträglich mit dem echten Ablesezeitpunkt. Zwischen zwei Ablesungen wird der Verbrauch gleichmäßig auf die Stunden verteilt. Daraus entsteht die Statistik `strom_tarife:zaehler` (kWh), die im Energie-Dashboard als Netzbezug eingetragen wird. Nach der letzten Ablesung erscheint noch kein Verbrauch; er wird mit der nächsten Ablesung nachgetragen. Ein Stand, der kleiner ist als ein früherer (oder größer als ein späterer), wird abgelehnt.
 
 ## Verträge
 
@@ -8,28 +12,30 @@ Jeder Vertrag hat Anbieter, gültig von / bis (bis leer = offen), Arbeitspreis i
 
 ```yaml
 type: custom:strom-tarife-card
-ansicht: vertraege   # oder: kosten
+ansicht: vertraege   # oder: zaehler, kosten
 ```
 
 - **vertraege** – Tabelle mit Hinzufügen / Bearbeiten / Löschen (nur Administratoren). Zeiträume ohne Vertrag werden angezeigt (sie kosten 0 €). Überschneiden sich Verträge, gilt der mit dem späteren Beginn.
+- **zaehler** – Ablesungen mit Verbrauch seit der vorherigen und Ø pro Tag, Hinzufügen / Bearbeiten / Löschen.
 - **kosten** – Kosten je Reihe für diesen Monat, dieses Jahr und das Vorjahr, auf Cent gerundet.
 
 ## Berechnung
 
-Jede Stunde wird mit dem Arbeitspreis des Vertrags berechnet, der an diesem Tag galt. Grundlage sind die stündlichen Langzeit-Statistiken des Zählers und der Geräte-Energiesensoren. Ergebnis sind externe Statistiken:
+Jede Stunde wird mit dem Arbeitspreis des Vertrags berechnet, der an diesem Tag galt. Grundlage sind die Zählerstatistik aus den Ablesungen und die stündlichen Langzeit-Statistiken der Geräte-Energiesensoren. Ergebnis sind externe Statistiken:
 
 - `strom_tarife:kosten_gesamt` – für das Energie-Dashboard als Kosten-Statistik des Netzbezugs
 - `strom_tarife:kosten_<gerät>` – je Gerät
 
-Neue Stunden werden stündlich (Minute 12) ergänzt. Nach jeder Vertragsänderung wird alles neu berechnet; manuell über den Knopf „Kosten neu berechnen“ oder den Dienst `strom_tarife.neu_berechnen` (z. B. nach einem Import alter Zählerstände).
+Gerätekosten werden stündlich (Minute 12) ergänzt. Nach jeder Änderung an Verträgen oder Ablesungen wird alles neu berechnet; manuell über den Knopf „Kosten neu berechnen“ oder den Dienst `strom_tarife.neu_berechnen`.
 
 Der Grundpreis wird gespeichert und angezeigt, fließt aber (noch) nicht in die Kosten ein.
 
 ## Entitäten
 
 - `sensor.stromtarife_arbeitspreis` (ct/kWh), `sensor.stromtarife_grundpreis` (€/Monat), `sensor.stromtarife_anbieter` – jeweils des heute gültigen Vertrags
+- `sensor.stromtarife_zahlerstand` – letzte Ablesung
 - `button.stromtarife_kosten_neu_berechnen`
 
 ## Installation
 
-HACS → Benutzerdefiniertes Repository → dieses Repo (Typ Integration) → herunterladen → Neustart → Einstellungen → Geräte & Dienste → „Stromtarife“ hinzufügen, Zähler und Geräte wählen.
+HACS → Benutzerdefiniertes Repository → dieses Repo (Typ Integration) → herunterladen → Neustart → Einstellungen → Geräte & Dienste → „Stromtarife“ hinzufügen, Geräte wählen. Im Energie-Dashboard als Netzbezug `strom_tarife:zaehler` mit Kosten-Statistik `strom_tarife:kosten_gesamt` eintragen.
