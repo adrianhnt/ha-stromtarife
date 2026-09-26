@@ -35,6 +35,7 @@ async def async_setup_entry(
             ArbeitspreisSensor(manager, entry.entry_id),
             GrundpreisSensor(manager, entry.entry_id),
             AnbieterSensor(manager, entry.entry_id),
+            ZaehlerstandSensor(manager, entry.entry_id),
         ]
     )
 
@@ -114,3 +115,24 @@ class AnbieterSensor(_TarifSensor):
     def native_value(self) -> str | None:
         contract = self.manager.current_contract()
         return contract["anbieter"] if contract else None
+
+
+class ZaehlerstandSensor(_TarifSensor):
+    """Letzte Ablesung (ohne Statistik – die Zählerstatistik schreibt die Integration selbst)."""
+
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:meter-electric"
+
+    def __init__(self, manager: StromTarife, entry_id: str) -> None:
+        super().__init__(manager, entry_id, "zaehlerstand")
+
+    @property
+    def native_value(self) -> float | None:
+        reading = self.manager.last_reading()
+        return reading["stand"] if reading else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        reading = self.manager.last_reading()
+        return {"abgelesen": reading["zeitpunkt"], "notiz": reading.get("notiz") or None} if reading else {}

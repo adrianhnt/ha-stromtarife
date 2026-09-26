@@ -1,4 +1,4 @@
-"""Einrichtung: Zähler und Geräte auswählen."""
+"""Einrichtung: Geräte auswählen, deren Kosten einzeln berechnet werden."""
 
 from __future__ import annotations
 
@@ -11,16 +11,13 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 
-from .const import CONF_DEVICES, CONF_METER, DOMAIN, NAME
+from .const import CONF_DEVICES, DOMAIN, NAME
 
 
 def _schema(defaults: dict[str, Any]) -> vol.Schema:
     energy = {"domain": "sensor", "device_class": SensorDeviceClass.ENERGY}
     return vol.Schema(
         {
-            vol.Required(CONF_METER, default=defaults.get(CONF_METER, vol.UNDEFINED)): EntitySelector(
-                EntitySelectorConfig(filter=energy)
-            ),
             vol.Optional(CONF_DEVICES, default=defaults.get(CONF_DEVICES, [])): EntitySelector(
                 EntitySelectorConfig(filter=energy, multiple=True)
             ),

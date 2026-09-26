@@ -15,7 +15,7 @@ from .tarife import StromTarife, ValidationError
 
 @callback
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
-    for command in (ws_data, ws_save, ws_delete, ws_recalculate):
+    for command in (ws_data, ws_save, ws_delete, ws_recalculate, ws_reading_save, ws_reading_delete):
         websocket_api.async_register_command(hass, command)
 
 
@@ -33,6 +33,7 @@ def _data(manager: StromTarife) -> dict[str, Any]:
             for c in manager.sorted_contracts()
         ],
         "luecken": manager.gaps(),
+        "ablesungen": manager.sorted_readings(),
         "reihen": manager.series(),
         "berechnung": {
             "laeuft": manager.busy,
@@ -93,4 +94,38 @@ async def ws_recalculate(hass: HomeAssistant, connection: websocket_api.ActiveCo
         connection.send_error(msg["id"], "not_loaded", "Stromtarife ist nicht eingerichtet")
         return
     await manager.async_recalculate(full=True)
+    connection.send_result(msg["id"], _data(manager))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/ablesung/save", vol.Required("ablesung"): dict}
+)
+@websocket_api.async_response
+async def ws_reading_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    if (manager := _manager(hass)) is None:
+        connection.send_error(msg["id"], "not_loaded", "Stromtarife ist nicht eingerichtet")
+        return
+    try:
+        reading = await manager.async_save_reading(msg["ablesung"])
+    except ValidationError as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+        return
+    connection.send_result(msg["id"], {"ablesung": reading, **_data(manager)})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/ablesung/delete", vol.Required("ablesung_id"): str}
+)
+@websocket_api.async_response
+async def ws_reading_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
+    if (manager := _manager(hass)) is None:
+        connection.send_error(msg["id"], "not_loaded", "Stromtarife ist nicht eingerichtet")
+        return
+    try:
+        await manager.async_delete_reading(msg["ablesung_id"])
+    except ValidationError as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+        return
     connection.send_result(msg["id"], _data(manager))

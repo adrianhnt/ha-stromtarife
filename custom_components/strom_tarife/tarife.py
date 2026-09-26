@@ -29,8 +29,8 @@ from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     CONF_DEVICES,
-    CONF_METER,
     DOMAIN,
+    METER_STAT,
     SIGNAL_UPDATED,
     STAT_PREFIX,
     STORAGE_KEY,
@@ -80,6 +80,7 @@ class StromTarife:
         self.entry = entry
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.contracts: list[dict[str, Any]] = []
+        self.readings: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
         self._pending_full: asyncio.Task | None = None
         self.running = False
@@ -92,9 +93,10 @@ class StromTarife:
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.contracts = data.get("vertraege", [])
+        self.readings = data.get("ablesungen", [])
 
     async def _async_save(self) -> None:
-        await self._store.async_save({"vertraege": self.contracts})
+        await self._store.async_save({"vertraege": self.contracts, "ablesungen": self.readings})
 
     # ------------------------------------------------------------------ Verträge
 
@@ -181,6 +183,103 @@ class StromTarife:
         await self._async_save()
         self._changed()
 
+    # ------------------------------------------------------------------ Zählerstände
+
+    def sorted_readings(self) -> list[dict[str, Any]]:
+        """Ablesungen, neueste zuerst, mit Verbrauch seit der vorherigen."""
+        ordered = sorted(self.readings, key=lambda r: r["zeitpunkt"])
+        result = []
+        prev = None
+        for reading in ordered:
+            item = dict(reading)
+            if prev is not None:
+                days = (_reading_time(reading) - _reading_time(prev)).total_seconds() / 86400
+                item["verbrauch"] = round(reading["stand"] - prev["stand"], 3)
+                item["tage"] = round(days, 2)
+                item["pro_tag"] = round(item["verbrauch"] / days, 3) if days > 0 else None
+            result.append(item)
+            prev = reading
+        return list(reversed(result))
+
+    def last_reading(self) -> dict[str, Any] | None:
+        return max(self.readings, key=lambda r: r["zeitpunkt"]) if self.readings else None
+
+    async def async_save_reading(self, data: dict[str, Any]) -> dict[str, Any]:
+        raw_time = str(data.get("zeitpunkt") or "").strip()
+        try:
+            when = datetime.fromisoformat(raw_time)
+        except ValueError as err:
+            raise ValidationError("Zeitpunkt: ungültige Angabe") from err
+        if when.tzinfo is not None:
+            when = dt_util.as_local(when).replace(tzinfo=None)
+        if when.replace(tzinfo=dt_util.get_default_time_zone()) > dt_util.now() + timedelta(minutes=5):
+            raise ValidationError("Zeitpunkt liegt in der Zukunft")
+        if data.get("stand") in (None, ""):
+            raise ValidationError("Zählerstand fehlt")
+        try:
+            stand = round(float(str(data["stand"]).replace(",", ".")), 3)
+        except ValueError as err:
+            raise ValidationError("Zählerstand: keine Zahl") from err
+        if stand < 0:
+            raise ValidationError("Zählerstand darf nicht negativ sein")
+        reading = {
+            "id": data.get("id") or uuid.uuid4().hex[:12],
+            "zeitpunkt": when.strftime("%Y-%m-%dT%H:%M"),
+            "stand": stand,
+            "notiz": str(data.get("notiz") or "").strip(),
+        }
+        others = [r for r in self.readings if r["id"] != reading["id"]]
+        for other in others:
+            if other["zeitpunkt"] == reading["zeitpunkt"]:
+                raise ValidationError("Zu diesem Zeitpunkt gibt es schon eine Ablesung")
+            if other["zeitpunkt"] < reading["zeitpunkt"] and other["stand"] > stand:
+                raise ValidationError(
+                    f"Stand ist kleiner als am {_fmt_time(other['zeitpunkt'])} ({other['stand']:.1f} kWh)"
+                )
+            if other["zeitpunkt"] > reading["zeitpunkt"] and other["stand"] < stand:
+                raise ValidationError(
+                    f"Stand ist größer als am {_fmt_time(other['zeitpunkt'])} ({other['stand']:.1f} kWh)"
+                )
+        self.readings = [*others, reading]
+        await self._async_save()
+        self._changed()
+        return reading
+
+    async def async_delete_reading(self, reading_id: str) -> None:
+        before = len(self.readings)
+        self.readings = [r for r in self.readings if r["id"] != reading_id]
+        if len(self.readings) == before:
+            raise ValidationError("Ablesung nicht gefunden")
+        await self._async_save()
+        self._changed()
+
+    def meter_rows(self) -> list[dict[str, float]]:
+        """Stündliche Zählerwerte, zwischen zwei Ablesungen linear verteilt.
+
+        Zeile mit Beginn H enthält den Stand am Ende der Stunde (bzw. zur letzten Ablesung).
+        """
+        points = sorted(((_reading_time(r), r["stand"]) for r in self.readings), key=lambda p: p[0])
+        if not points:
+            return []
+        base = points[0][1]
+        first, last = points[0][0], points[-1][0]
+        hour = dt_util.as_utc(first).replace(minute=0, second=0, microsecond=0)
+        end_hour = dt_util.as_utc(last).replace(minute=0, second=0, microsecond=0)
+        rows = []
+        index = 0
+        while hour <= end_hour:
+            at = min(max(hour + timedelta(hours=1), first), last)
+            while index < len(points) - 2 and points[index + 1][0] < at:
+                index += 1
+            (t0, v0), (t1, v1) = points[index], points[min(index + 1, len(points) - 1)]
+            if t1 <= t0 or at >= t1:
+                value = v1
+            else:
+                value = v0 + (v1 - v0) * (at - t0).total_seconds() / (t1 - t0).total_seconds()
+            rows.append({"start": hour.timestamp(), "sum": round(value - base, 6), "state": round(value, 6)})
+            hour += timedelta(hours=1)
+        return rows
+
     def _changed(self) -> None:
         async_dispatcher_send(self.hass, SIGNAL_UPDATED)
         self.schedule_full_recalculation()
@@ -192,11 +291,9 @@ class StromTarife:
         registry = er.async_get(self.hass)
         options = {**self.entry.data, **self.entry.options}
         result = []
-        meter = options.get(CONF_METER)
-        if meter:
-            result.append(
-                {"id": TOTAL_ID, "name": "Gesamt", "source": meter, "statistic_id": STAT_PREFIX + TOTAL_ID}
-            )
+        result.append(
+            {"id": TOTAL_ID, "name": "Gesamt", "source": METER_STAT, "statistic_id": STAT_PREFIX + TOTAL_ID}
+        )
         for entity_id in options.get(CONF_DEVICES, []):
             name = None
             if entry := registry.async_get(entity_id):
@@ -239,6 +336,12 @@ class StromTarife:
             async_dispatcher_send(self.hass, SIGNAL_UPDATED)
             errors = []
             try:
+                if full:
+                    try:
+                        self._write_meter()
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.exception("Zählerstatistik fehlgeschlagen")
+                        errors.append(f"Zähler: {err}")
                 for serie in self.series():
                     try:
                         await self._async_update_series(serie, full)
@@ -257,14 +360,14 @@ class StromTarife:
                 async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     async def _async_first_day(self) -> None:
-        sources = {s["source"] for s in self.series()}
-        if not sources:
-            return
-        instance = get_instance(self.hass)
-        result = await instance.async_add_executor_job(
-            statistics_during_period, self.hass, _EPOCH, None, sources, "month", None, {"sum"}
-        )
-        starts = [rows[0]["start"] for rows in result.values() if rows]
+        sources = {s["source"] for s in self.series() if s["id"] != TOTAL_ID}
+        starts = [_reading_time(r).timestamp() for r in self.readings]
+        if sources:
+            instance = get_instance(self.hass)
+            result = await instance.async_add_executor_job(
+                statistics_during_period, self.hass, _EPOCH, None, sources, "month", None, {"sum"}
+            )
+            starts += [rows[0]["start"] for rows in result.values() if rows]
         if starts:
             self._first_day = dt_util.as_local(dt_util.utc_from_timestamp(min(starts))).date()
 
@@ -277,6 +380,13 @@ class StromTarife:
         instance = get_instance(hass)
         stat_id = serie["statistic_id"]
         source = serie["source"]
+
+        if serie["id"] == TOTAL_ID:
+            # Zähler ändert sich nur durch Ablesungen -> nur bei kompletter Neuberechnung
+            if not full:
+                return
+            await self._async_write_cost(serie, self.meter_rows(), full=True)
+            return
 
         last = None
         if not full:
@@ -294,17 +404,29 @@ class StromTarife:
         )
         rows = [r for r in res.get(source, []) if r.get("sum") is not None]
 
-        cost = 0.0
-        prev_sum: float | None = None
         if not full:
             if not rows or rows[0]["start"] != last["start"]:
                 # Anker fehlt (z. B. Quelle neu importiert) -> komplett neu
                 await self._async_update_series(serie, True)
                 return
-            cost = last["sum"]
-            prev_sum = rows[0]["sum"]
-            rows = rows[1:]
+            await self._async_write_cost(
+                serie, rows[1:], full=False, cost=last["sum"], prev_sum=rows[0]["sum"]
+            )
+            return
+        await self._async_write_cost(serie, rows, full=True)
 
+    async def _async_write_cost(
+        self,
+        serie: dict[str, str],
+        rows: list,
+        *,
+        full: bool,
+        cost: float = 0.0,
+        prev_sum: float | None = None,
+    ) -> None:
+        hass = self.hass
+        instance = get_instance(hass)
+        stat_id = serie["statistic_id"]
         out: list[StatisticData] = []
         for row in rows:
             value = row["sum"]
@@ -329,3 +451,39 @@ class StromTarife:
         if out:
             async_add_external_statistics(hass, metadata, out)
         _LOGGER.debug("%s: %s Stunden %s", stat_id, len(out), "neu berechnet" if full else "ergänzt")
+
+    def _write_meter(self) -> None:
+        """Zählerstatistik aus den Ablesungen komplett neu schreiben."""
+        instance = get_instance(self.hass)
+        instance.async_clear_statistics([METER_STAT])
+        rows = self.meter_rows()
+        if not rows:
+            return
+        metadata = StatisticMetaData(
+            source=DOMAIN,
+            statistic_id=METER_STAT,
+            name="Stromzähler",
+            unit_of_measurement="kWh",
+            unit_class="energy",
+            has_sum=True,
+            mean_type=StatisticMeanType.NONE,
+        )
+        async_add_external_statistics(
+            self.hass,
+            metadata,
+            [
+                StatisticData(start=dt_util.utc_from_timestamp(r["start"]), state=r["state"], sum=r["sum"])
+                for r in rows
+            ],
+        )
+
+
+def _reading_time(reading: dict[str, Any]) -> datetime:
+    # In UTC umrechnen: Differenzen mit gleicher Zeitzone rechnet Python sonst in Wanduhrzeit
+    local = datetime.fromisoformat(reading["zeitpunkt"]).replace(tzinfo=dt_util.get_default_time_zone())
+    return dt_util.as_utc(local)
+
+
+def _fmt_time(value: str) -> str:
+    when = datetime.fromisoformat(value)
+    return when.strftime("%d.%m.%Y %H:%M")
