@@ -72,6 +72,18 @@ def _parse_number(value: Any, field: str) -> float:
     return round(number, 2)
 
 
+def _parse_unit(value: Any) -> str:
+    unit = str(value or "jahr").strip().lower()
+    if unit not in ("monat", "jahr"):
+        raise ValidationError("Grundpreis: Einheit muss Monat oder Jahr sein")
+    return unit
+
+
+def grundpreis_pro_jahr(contract: dict[str, Any]) -> float:
+    value = contract.get("grundpreis_eur") or 0
+    return round(value * 12, 2) if contract.get("grundpreis_einheit") == "monat" else value
+
+
 class StromTarife:
     """Verträge und Kostenberechnung."""
 
@@ -96,6 +108,14 @@ class StromTarife:
         data = await self._store.async_load() or {}
         self.contracts = data.get("vertraege", [])
         self.readings = data.get("ablesungen", [])
+        # Bis v0.2.x gab es keine Einheit; Adrian hat alle Grundpreise pro Jahr eingetragen
+        migrated = False
+        for contract in self.contracts:
+            if "grundpreis_einheit" not in contract:
+                contract["grundpreis_einheit"] = "jahr"
+                migrated = True
+        if migrated:
+            await self._async_save()
 
     async def _async_save(self) -> None:
         await self._store.async_save({"vertraege": self.contracts, "ablesungen": self.readings})
@@ -165,6 +185,7 @@ class StromTarife:
             "bis": bis.isoformat() if bis else None,
             "arbeitspreis_ct": _parse_number(data.get("arbeitspreis_ct"), "Arbeitspreis"),
             "grundpreis_eur": _parse_number(data.get("grundpreis_eur", 0) or 0, "Grundpreis"),
+            "grundpreis_einheit": _parse_unit(data.get("grundpreis_einheit")),
             "notiz": str(data.get("notiz") or "").strip(),
         }
         for index, existing in enumerate(self.contracts):

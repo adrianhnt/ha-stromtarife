@@ -13,7 +13,7 @@ from homeassistant.helpers.event import async_track_time_change
 
 from . import StromTarifeConfigEntry
 from .const import DOMAIN, NAME, SIGNAL_UPDATED
-from .tarife import StromTarife
+from .tarife import StromTarife, grundpreis_pro_jahr
 
 
 def device_info(entry_id: str) -> DeviceInfo:
@@ -92,7 +92,7 @@ class ArbeitspreisSensor(_TarifSensor):
 
 
 class GrundpreisSensor(_TarifSensor):
-    _attr_native_unit_of_measurement = "€/Monat"
+    _attr_native_unit_of_measurement = "€/Jahr"
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:cash-multiple"
 
@@ -102,7 +102,7 @@ class GrundpreisSensor(_TarifSensor):
     @property
     def native_value(self) -> float | None:
         contract = self.manager.current_contract()
-        return contract["grundpreis_eur"] if contract else None
+        return grundpreis_pro_jahr(contract) if contract else None
 
 
 class AnbieterSensor(_TarifSensor):
