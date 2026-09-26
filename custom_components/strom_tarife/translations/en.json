@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up electricity tariffs",
+        "description": "Select the electricity meter (total consumption) and the devices whose costs should be calculated individually.",
+        "data": {
+          "zaehler": "Electricity meter",
+          "geraete": "Devices (energy sensors)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Already configured.",
+      "single_instance_allowed": "Already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Electricity tariffs",
+        "description": "Change meter and devices. All costs are recalculated afterwards.",
+        "data": {
+          "zaehler": "Electricity meter",
+          "geraete": "Devices (energy sensors)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "arbeitspreis": {
+        "name": "Energy price"
+      },
+      "grundpreis": {
+        "name": "Base price"
+      },
+      "anbieter": {
+        "name": "Provider"
+      }
+    },
+    "button": {
+      "neu_berechnen": {
+        "name": "Recalculate costs"
+      }
+    }
+  },
+  "services": {
+    "neu_berechnen": {
+      "name": "Recalculate costs",
+      "description": "Recalculates all electricity costs using the stored contracts."
+    }
+  }
+}

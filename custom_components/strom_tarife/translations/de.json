@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Stromtarife einrichten",
+        "description": "Wähle den Stromzähler (Gesamtverbrauch) und die Geräte, deren Kosten einzeln berechnet werden sollen.",
+        "data": {
+          "zaehler": "Stromzähler",
+          "geraete": "Geräte (Energie-Sensoren)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Stromtarife ist bereits eingerichtet.",
+      "single_instance_allowed": "Stromtarife ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Stromtarife",
+        "description": "Zähler und Geräte ändern. Danach werden alle Kosten neu berechnet.",
+        "data": {
+          "zaehler": "Stromzähler",
+          "geraete": "Geräte (Energie-Sensoren)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "arbeitspreis": {
+        "name": "Arbeitspreis"
+      },
+      "grundpreis": {
+        "name": "Grundpreis"
+      },
+      "anbieter": {
+        "name": "Anbieter"
+      }
+    },
+    "button": {
+      "neu_berechnen": {
+        "name": "Kosten neu berechnen"
+      }
+    }
+  },
+  "services": {
+    "neu_berechnen": {
+      "name": "Kosten neu berechnen",
+      "description": "Berechnet alle Stromkosten mit den hinterlegten Verträgen komplett neu."
+    }
+  }
+}
