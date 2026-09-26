@@ -1,6 +1,6 @@
 // Stromtarife – Dashboard-Karte (Verträge als Tabelle / Kostenübersicht)
 // type: custom:strom-tarife-card
-// ansicht: vertraege | kosten
+// ansicht: vertraege | zaehler | kosten
 
 const DOMAIN = "strom_tarife";
 const EVENT = "strom-tarife-updated";
@@ -12,6 +12,17 @@ const fmtDate = (iso) => {
   if (!iso) return "";
   const [y, m, d] = iso.split("-");
   return `${d}.${m}.${y}`;
+};
+const fmtTime = (iso) => {
+  if (!iso) return "";
+  const [d, t] = iso.split("T");
+  return `${fmtDate(d)} ${t}`;
+};
+const num1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 3 });
+const localNow = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -157,7 +168,9 @@ class StromTarifeCard extends HTMLElement {
     let body;
     if (this._error) body = `<div class="err">${esc(this._error)}</div>`;
     else if (!this._data) body = `<div class="empty">Lädt …</div>`;
-    else body = this._config.ansicht === "kosten" ? this._renderCosts() : this._renderContracts();
+    else if (this._config.ansicht === "kosten") body = this._renderCosts();
+    else if (this._config.ansicht === "zaehler") body = this._renderReadings();
+    else body = this._renderContracts();
     root.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>${this._renderDialog()}`;
     this._bind();
   }
@@ -208,6 +221,37 @@ class StromTarifeCard extends HTMLElement {
     return `<div class="head"><div class="title">${esc(title)}</div>${add}</div>${table}${gaps}${this._status()}`;
   }
 
+  _renderReadings() {
+    const title = this._config.title ?? "Zählerstände";
+    const list = this._data.ablesungen;
+    const rows = list
+      .map((a) => {
+        const actions = this._isAdmin
+          ? `<td class="nowrap"><button class="icon" data-edit-reading="${a.id}" title="Bearbeiten"><ha-icon icon="mdi:pencil"></ha-icon></button></td>`
+          : "";
+        const verbrauch = a.verbrauch === undefined ? "" : `${num1.format(a.verbrauch)} kWh`;
+        const proTag = a.pro_tag === undefined || a.pro_tag === null ? "" : `${num2.format(a.pro_tag)} kWh`;
+        return `<tr>
+          <td class="nowrap">${fmtTime(a.zeitpunkt)}</td>
+          <td class="num">${num1.format(a.stand)} kWh</td>
+          <td class="num">${verbrauch}</td>
+          <td class="num">${proTag}</td>
+          <td class="note">${esc(a.notiz)}</td>
+          ${actions}
+        </tr>`;
+      })
+      .join("");
+    const table = list.length
+      ? `<div class="scroll"><table>
+          <thead><tr><th>Abgelesen</th><th class="num">Zählerstand</th><th class="num">Verbrauch seit davor</th><th class="num">Ø pro Tag</th><th>Notiz</th>${this._isAdmin ? "<th></th>" : ""}</tr></thead>
+          <tbody>${rows}</tbody></table></div>`
+      : `<div class="empty">Noch keine Ablesung eingetragen.</div>`;
+    const add = this._isAdmin ? `<button class="primary" id="add-reading">+ Ablesung</button>` : "";
+    return `<div class="head"><div class="title">${esc(title)}</div>${add}</div>${table}
+      <div class="status">Zwischen zwei Ablesungen wird der Verbrauch gleichmäßig verteilt. Nach der letzten Ablesung erscheint noch nichts – erst mit der nächsten.</div>
+      ${this._status()}`;
+  }
+
   _renderCosts() {
     const title = this._config.title ?? "Stromkosten";
     const val = (id, key) => {
@@ -237,6 +281,7 @@ class StromTarifeCard extends HTMLElement {
   _renderDialog() {
     const d = this._dialog;
     if (!d) return "";
+    if (d.kind === "ablesung") return this._renderReadingDialog(d);
     const v = d.vertrag;
     if (d.confirmDelete) {
       return `<div class="overlay"><div class="dialog">
@@ -268,8 +313,44 @@ class StromTarifeCard extends HTMLElement {
     </div></div>`;
   }
 
+  _renderReadingDialog(d) {
+    const a = d.ablesung;
+    if (d.confirmDelete) {
+      return `<div class="overlay"><div class="dialog">
+        <h3>Ablesung löschen?</h3>
+        <div>${fmtTime(a.zeitpunkt)}: ${num1.format(a.stand)} kWh wird gelöscht. Verbrauch und Kosten werden danach neu berechnet.</div>
+        ${d.error ? `<div class="err">${esc(d.error)}</div>` : ""}
+        <div class="actions"><button class="plain" id="cancel">Abbrechen</button><button class="danger" id="confirm-delete">Löschen</button></div>
+      </div></div>`;
+    }
+    const stand = a.stand === "" || a.stand === undefined ? "" : String(a.stand).replace(".", ",");
+    return `<div class="overlay"><div class="dialog">
+      <h3>${a.id ? "Ablesung bearbeiten" : "Neue Ablesung"}</h3>
+      <label>Abgelesen am</label><input id="r-zeit" type="datetime-local" value="${esc(a.zeitpunkt)}">
+      <label>Zählerstand <span class="unit">kWh</span></label><input id="r-stand" inputmode="decimal" value="${esc(stand)}" placeholder="z. B. 25362,0">
+      <label>Notiz</label><textarea id="r-notiz">${esc(a.notiz)}</textarea>
+      ${d.error ? `<div class="err">${esc(d.error)}</div>` : ""}
+      <div class="actions">
+        ${a.id ? `<button class="plain left" id="delete" style="color:var(--error-color,#db4437)">Löschen</button>` : ""}
+        <button class="plain" id="cancel">Abbrechen</button>
+        <button class="primary" id="save">Speichern</button>
+      </div>
+    </div></div>`;
+  }
+
   _bind() {
     const $ = (sel) => this.shadowRoot.querySelector(sel);
+    $("#add-reading")?.addEventListener("click", () => {
+      this._dialog = { kind: "ablesung", ablesung: { zeitpunkt: localNow(), stand: "", notiz: "" } };
+      this._render();
+    });
+    this.shadowRoot.querySelectorAll("[data-edit-reading]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const a = this._data.ablesungen.find((x) => x.id === btn.dataset.editReading);
+        this._dialog = { kind: "ablesung", ablesung: { id: a.id, zeitpunkt: a.zeitpunkt, stand: a.stand, notiz: a.notiz } };
+        this._render();
+      })
+    );
     $("#add")?.addEventListener("click", () => {
       const last = this._data.vertraege[0];
       this._dialog = {
@@ -296,7 +377,8 @@ class StromTarifeCard extends HTMLElement {
     });
     $("#save")?.addEventListener("click", () => this._save());
     $("#delete")?.addEventListener("click", () => {
-      this._dialog = { ...this._dialog, vertrag: this._readForm(), confirmDelete: true, error: null };
+      if (this._dialog.kind === "ablesung") this._dialog = { ...this._dialog, ablesung: this._readReadingForm(), confirmDelete: true, error: null };
+      else this._dialog = { ...this._dialog, vertrag: this._readForm(), confirmDelete: true, error: null };
       this._render();
     });
     $("#confirm-delete")?.addEventListener("click", () => this._delete());
@@ -315,7 +397,29 @@ class StromTarifeCard extends HTMLElement {
     };
   }
 
+  _readReadingForm() {
+    const $ = (sel) => this.shadowRoot.querySelector(sel);
+    return {
+      ...this._dialog.ablesung,
+      zeitpunkt: $("#r-zeit").value,
+      stand: $("#r-stand").value.trim(),
+      notiz: $("#r-notiz").value,
+    };
+  }
+
   async _save() {
+    if (this._dialog.kind === "ablesung") {
+      const ablesung = this._readReadingForm();
+      try {
+        this._data = await this._hass.callWS({ type: `${DOMAIN}/ablesung/save`, ablesung });
+        this._dialog = null;
+        this._afterChange();
+      } catch (err) {
+        this._dialog = { kind: "ablesung", ablesung, error: err.message || String(err) };
+        this._render();
+      }
+      return;
+    }
     const vertrag = this._readForm();
     delete vertrag.aktiv;
     delete vertrag.ueberschneidet;
@@ -330,6 +434,17 @@ class StromTarifeCard extends HTMLElement {
   }
 
   async _delete() {
+    if (this._dialog.kind === "ablesung") {
+      try {
+        this._data = await this._hass.callWS({ type: `${DOMAIN}/ablesung/delete`, ablesung_id: this._dialog.ablesung.id });
+        this._dialog = null;
+        this._afterChange();
+      } catch (err) {
+        this._dialog = { ...this._dialog, error: err.message || String(err) };
+        this._render();
+      }
+      return;
+    }
     try {
       this._data = await this._hass.callWS({ type: `${DOMAIN}/vertrag/delete`, vertrag_id: this._dialog.vertrag.id });
       this._dialog = null;
@@ -354,6 +469,6 @@ if (!customElements.get("strom-tarife-card")) {
   window.customCards.push({
     type: "strom-tarife-card",
     name: "Stromtarife",
-    description: "Stromverträge als Tabelle (ansicht: vertraege) oder Kostenübersicht (ansicht: kosten)",
+    description: "Stromverträge (ansicht: vertraege), Zählerstände (ansicht: zaehler) oder Kostenübersicht (ansicht: kosten)",
   });
 }
