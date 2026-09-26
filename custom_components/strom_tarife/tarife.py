@@ -83,6 +83,8 @@ class StromTarife:
         self.readings: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
         self._pending_full: asyncio.Task | None = None
+        self._full_requested = False
+        self._full_scope_all = False
         self.running = False
         self.last_run: datetime | None = None
         self.last_error: str | None = None
@@ -242,7 +244,7 @@ class StromTarife:
                 )
         self.readings = [*others, reading]
         await self._async_save()
-        self._changed()
+        self._changed(nur_zaehler=True)
         return reading
 
     async def async_delete_reading(self, reading_id: str) -> None:
@@ -251,38 +253,51 @@ class StromTarife:
         if len(self.readings) == before:
             raise ValidationError("Ablesung nicht gefunden")
         await self._async_save()
-        self._changed()
+        self._changed(nur_zaehler=True)
 
     def meter_rows(self) -> list[dict[str, float]]:
-        """Stündliche Zählerwerte, zwischen zwei Ablesungen linear verteilt.
+        """Zählerwerte je Tag, zwischen zwei Ablesungen linear verteilt.
 
-        Zeile mit Beginn H enthält den Stand am Ende der Stunde (bzw. zur letzten Ablesung).
+        Eine Zeile je Tageswechsel (Beginn 23 Uhr, Stand um Mitternacht) und je Ablesung.
+        So gehört der Verbrauch eines Tages zu einer Zeile, deren Beginn auf diesem Tag
+        liegt – damit greift beim Vertragswechsel der richtige Preis. Stündliche Werte
+        gibt es aus Ablesungen ohnehin nicht, und die Datenbank bleibt klein.
         """
         points = sorted(((_reading_time(r), r["stand"]) for r in self.readings), key=lambda p: p[0])
         if not points:
             return []
         base = points[0][1]
         first, last = points[0][0], points[-1][0]
-        hour = dt_util.as_utc(first).replace(minute=0, second=0, microsecond=0)
-        end_hour = dt_util.as_utc(last).replace(minute=0, second=0, microsecond=0)
-        rows = []
-        index = 0
-        while hour <= end_hour:
-            at = min(max(hour + timedelta(hours=1), first), last)
-            while index < len(points) - 2 and points[index + 1][0] < at:
-                index += 1
-            (t0, v0), (t1, v1) = points[index], points[min(index + 1, len(points) - 1)]
-            if t1 <= t0 or at >= t1:
-                value = v1
-            else:
-                value = v0 + (v1 - v0) * (at - t0).total_seconds() / (t1 - t0).total_seconds()
-            rows.append({"start": hour.timestamp(), "sum": round(value - base, 6), "state": round(value, 6)})
-            hour += timedelta(hours=1)
-        return rows
 
-    def _changed(self) -> None:
+        def value_at(at: datetime) -> float:
+            for (t0, v0), (t1, v1) in zip(points, points[1:]):
+                if t0 <= at <= t1:
+                    if t1 == t0:
+                        return v1
+                    return v0 + (v1 - v0) * (at - t0).total_seconds() / (t1 - t0).total_seconds()
+            return points[-1][1] if at >= last else points[0][1]
+
+        rows: dict[float, float] = {}
+        for when, value in points:
+            start = when.replace(minute=0, second=0, microsecond=0)
+            rows[start.timestamp()] = value
+        tz = dt_util.get_default_time_zone()
+        day = dt_util.as_local(first).date() + timedelta(days=1)
+        while True:
+            midnight = dt_util.as_utc(datetime(day.year, day.month, day.day, tzinfo=tz))
+            if midnight > last:
+                break
+            # Tageswechsel hat Vorrang, falls eine Ablesung in derselben Stunde liegt
+            rows[(midnight - timedelta(hours=1)).timestamp()] = value_at(midnight)
+            day += timedelta(days=1)
+        return [
+            {"start": start, "sum": round(value - base, 6), "state": round(value, 6)}
+            for start, value in sorted(rows.items())
+        ]
+
+    def _changed(self, nur_zaehler: bool = False) -> None:
         async_dispatcher_send(self.hass, SIGNAL_UPDATED)
-        self.schedule_full_recalculation()
+        self.schedule_full_recalculation(nur_zaehler=nur_zaehler)
 
     # ------------------------------------------------------------------ Reihen
 
@@ -296,10 +311,10 @@ class StromTarife:
         )
         for entity_id in options.get(CONF_DEVICES, []):
             name = None
-            if entry := registry.async_get(entity_id):
-                name = entry.name or entry.original_name
             if state := self.hass.states.get(entity_id):
-                name = name or state.name
+                name = state.name  # Anzeigename inkl. Gerätename
+            if not name and (entry := registry.async_get(entity_id)):
+                name = entry.name or entry.original_name
             name = name or entity_id
             for suffix in (" Energie", " Energy", " energie"):
                 if name.endswith(suffix):
@@ -317,20 +332,30 @@ class StromTarife:
         """Berechnung läuft oder ist eingeplant."""
         return self.running or bool(self._pending_full and not self._pending_full.done())
 
-    def schedule_full_recalculation(self) -> None:
-        """Komplett neu rechnen (entprellt, falls mehrere Änderungen kurz nacheinander)."""
-        if self._pending_full and not self._pending_full.done():
-            self._pending_full.cancel()
+    def schedule_full_recalculation(self, nur_zaehler: bool = False) -> None:
+        """Komplett neu rechnen – entprellt; eine laufende Berechnung wird nie abgebrochen.
 
-        async def _delayed() -> None:
-            await asyncio.sleep(3)
-            await self.async_recalculate(full=True)
+        nur_zaehler: nur Zählerstatistik und Gesamtkosten (Ablesungen geändert).
+        """
+        if not nur_zaehler:
+            self._full_scope_all = True
+        self._full_requested = True
+        if self._pending_full and not self._pending_full.done():
+            return  # der laufende Auftrag rechnet danach noch einmal
+
+        async def _worker() -> None:
+            while self._full_requested:
+                await asyncio.sleep(3)  # weitere Änderungen kurz sammeln
+                self._full_requested = False
+                only_meter = not self._full_scope_all
+                self._full_scope_all = False
+                await self.async_recalculate(full=True, nur_zaehler=only_meter)
 
         self._pending_full = self.entry.async_create_background_task(
-            self.hass, _delayed(), f"{DOMAIN}_neu_berechnen"
+            self.hass, _worker(), f"{DOMAIN}_neu_berechnen"
         )
 
-    async def async_recalculate(self, full: bool = False) -> None:
+    async def async_recalculate(self, full: bool = False, nur_zaehler: bool = False) -> None:
         async with self._lock:
             self.running = True
             async_dispatcher_send(self.hass, SIGNAL_UPDATED)
@@ -343,6 +368,8 @@ class StromTarife:
                         _LOGGER.exception("Zählerstatistik fehlgeschlagen")
                         errors.append(f"Zähler: {err}")
                 for serie in self.series():
+                    if nur_zaehler and serie["id"] != TOTAL_ID:
+                        continue
                     try:
                         await self._async_update_series(serie, full)
                     except Exception as err:  # noqa: BLE001
@@ -350,7 +377,7 @@ class StromTarife:
                         errors.append(f"{serie['name']}: {err}")
                 await self._async_first_day()
                 try:
-                    await asyncio.wait_for(get_instance(self.hass).async_block_till_done(), 60)
+                    await asyncio.wait_for(get_instance(self.hass).async_block_till_done(), 20)
                 except TimeoutError:
                     pass
             finally:

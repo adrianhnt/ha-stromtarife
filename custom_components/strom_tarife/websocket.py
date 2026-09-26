@@ -93,7 +93,7 @@ async def ws_recalculate(hass: HomeAssistant, connection: websocket_api.ActiveCo
     if (manager := _manager(hass)) is None:
         connection.send_error(msg["id"], "not_loaded", "Stromtarife ist nicht eingerichtet")
         return
-    await manager.async_recalculate(full=True)
+    manager.schedule_full_recalculation()
     connection.send_result(msg["id"], _data(manager))
 
 
