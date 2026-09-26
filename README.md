@@ -8,16 +8,17 @@ Abgelesene Stände (Zeitpunkt, kWh, Notiz) werden in einer Tabelle gepflegt – 
 
 ## Verträge
 
-Jeder Vertrag hat Anbieter, gültig von / bis (bis leer = offen), Arbeitspreis in ct/kWh (zwei Nachkommastellen), Grundpreis in €/Monat und eine Notiz. Gepflegt werden sie direkt auf dem Dashboard in einer Tabelle:
+Jeder Vertrag hat Anbieter, gültig von / bis (bis leer = offen), Arbeitspreis in ct/kWh (zwei Nachkommastellen), Grundpreis (wahlweise pro Monat oder pro Jahr) und eine Notiz. Gepflegt werden sie direkt auf dem Dashboard in einer Tabelle:
 
 ```yaml
 type: custom:strom-tarife-card
-ansicht: vertraege   # oder: zaehler, kosten
+ansicht: vertraege   # oder: zaehler, kosten, diagramm
 ```
 
 - **vertraege** – Tabelle mit Hinzufügen / Bearbeiten / Löschen (nur Administratoren). Zeiträume ohne Vertrag werden angezeigt (sie kosten 0 €). Überschneiden sich Verträge, gilt der mit dem späteren Beginn.
 - **zaehler** – Ablesungen mit Verbrauch seit der vorherigen und Ø pro Tag, Hinzufügen / Bearbeiten / Löschen.
 - **kosten** – Kosten je Reihe für diesen Monat, dieses Jahr und das Vorjahr, auf Cent gerundet.
+- **diagramm** – gestapelte Balken je Monat (12 Monate) oder Jahr, umschaltbar kWh / €, mit „Nicht erfasst“ (Zähler minus Geräte) wie im Energie-Dashboard. Optional `einheit: kwh|eur`, `zeitraum: monate|jahre`.
 
 ## Berechnung
 
@@ -32,7 +33,7 @@ Der Grundpreis wird gespeichert und angezeigt, fließt aber (noch) nicht in die 
 
 ## Entitäten
 
-- `sensor.stromtarife_arbeitspreis` (ct/kWh), `sensor.stromtarife_grundpreis` (€/Monat), `sensor.stromtarife_anbieter` – jeweils des heute gültigen Vertrags
+- `sensor.stromtarife_arbeitspreis` (ct/kWh), `sensor.stromtarife_grundpreis` (€/Jahr), `sensor.stromtarife_anbieter` – jeweils des heute gültigen Vertrags
 - `sensor.stromtarife_zahlerstand` – letzte Ablesung
 - `button.stromtarife_kosten_neu_berechnen`
 
