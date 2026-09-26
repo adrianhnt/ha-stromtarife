@@ -4,6 +4,8 @@
 
 const DOMAIN = "strom_tarife";
 const EVENT = "strom-tarife-updated";
+const HIDDEN_KEY = "strom-tarife-diagramm-ausgeblendet";
+const UNTRACKED = "__nicht_erfasst";
 
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const num2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -85,6 +87,11 @@ const STYLE = `
   .chart .hit:hover { fill: var(--primary-text-color); fill-opacity: 0.05; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 0.85em; color: var(--secondary-text-color); }
   .legend span.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .legend button.lg { background: transparent; color: var(--primary-text-color); padding: 3px 8px; border: 1px solid var(--divider-color); border-radius: 12px; font-size: 1em; }
+  .legend button.lg.off { color: var(--secondary-text-color); opacity: 0.55; text-decoration: line-through; }
+  .legend button.lg.off span.sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--secondary-text-color); }
+  .legend button.lg:hover { border-color: var(--secondary-text-color); }
+  .legend button.all { background: transparent; color: var(--primary-color); padding: 3px 4px; font-size: 1em; }
   .tip { position: absolute; pointer-events: none; background: var(--card-background-color, #fff); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 10px; font-size: 0.85em; box-shadow: 0 4px 16px rgba(0,0,0,0.25); min-width: 170px; z-index: 2; }
   .tip .t { font-weight: 500; margin-bottom: 4px; }
   .tip .r { display: flex; justify-content: space-between; gap: 12px; }
@@ -203,6 +210,26 @@ class StromTarifeCard extends HTMLElement {
 
   // ------------------------------------------------------------------ Diagramm
 
+  get _hidden() {
+    if (!this.__hidden) {
+      let saved = [];
+      try {
+        saved = JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]");
+      } catch (e) {}
+      this.__hidden = new Set(Array.isArray(saved) ? saved : []);
+    }
+    return this.__hidden;
+  }
+
+  _toggleSeries(key) {
+    const hidden = this._hidden;
+    hidden.has(key) ? hidden.delete(key) : hidden.add(key);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]));
+    } catch (e) {}
+    this._render();
+  }
+
   get _chartMode() {
     return this.__chartMode ?? this._config.einheit ?? "eur";
   }
@@ -285,6 +312,15 @@ class StromTarifeCard extends HTMLElement {
       buckets = buckets.map((b) => ({ ...b, values: [...b.values.slice(0, 7), b.values.slice(7).reduce((a, v) => a + v, 0)] }));
     }
     const colors = names.map((_, i) => palette[i]);
+    // Ausgeblendete Reihen zählen nicht mit – Farben bleiben am Gerät, damit nichts umgefärbt wird
+    const hidden = this._hidden;
+    const showDev = names.map((n) => !hidden.has(n));
+    const showUn = !hidden.has(UNTRACKED);
+    buckets = buckets.map((b) => ({
+      ...b,
+      values: b.values.map((v, k) => (showDev[k] ? v : 0)),
+      untracked: showUn ? b.untracked : 0,
+    }));
     const fmt = (v) => (c.kwh ? `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: v < 10 ? 1 : 0 }).format(v)} kWh` : eur.format(v));
     const label = (d) =>
       c.monthly ? d.toLocaleString("de-DE", { month: "short" }).replace(".", "") + (d.getMonth() === 0 ? ` ${String(d.getFullYear()).slice(2)}` : "") : String(d.getFullYear());
@@ -329,10 +365,16 @@ class StromTarifeCard extends HTMLElement {
         svg += `<text class="axis" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${esc(label(b.start))}</text>`;
       svg += `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
     });
-    const legend = [...names.map((n, i) => [n, colors[i]]), ["Nicht erfasst", grey]]
-      .map(([n, col]) => `<span><span class="sw" style="background:${col}"></span>${esc(n)}</span>`)
-      .join("");
-    this._chartView = { buckets, names, colors, grey, fmt, label };
+    const legendItems = [...names.map((n, i) => [n, n, colors[i]]), [UNTRACKED, "Nicht erfasst", grey]];
+    const anyHidden = legendItems.some(([key]) => hidden.has(key));
+    const legend =
+      legendItems
+        .map(([key, n, col]) => {
+          const off = hidden.has(key);
+          return `<button class="lg${off ? " off" : ""}" data-series="${esc(key)}" aria-pressed="${!off}" title="${off ? "Einblenden" : "Ausblenden"}"><span class="sw" style="background:${col}"></span>${esc(n)}</button>`;
+        })
+        .join("") + (anyHidden ? `<button class="all" data-series-all>Alle anzeigen</button>` : "");
+    this._chartView = { buckets, names, colors, grey, fmt, label, anyHidden };
     const last = this._data.ablesungen[0];
     const hint = last
       ? `<div class="status">„Nicht erfasst“ = Zähler minus Geräte. Den Zählerverbrauch gibt es bis zur letzten Ablesung (${fmtTime(last.zeitpunkt)}); danach zeigt das Diagramm nur die Geräte.${c.kwh ? "" : " Kosten ohne Grundpreis."}</div>`
@@ -360,6 +402,14 @@ class StromTarifeCard extends HTMLElement {
         this._render();
       })
     );
+    root.querySelectorAll("[data-series]").forEach((b) => b.addEventListener("click", () => this._toggleSeries(b.dataset.series)));
+    root.querySelector("[data-series-all]")?.addEventListener("click", () => {
+      this.__hidden = new Set();
+      try {
+        localStorage.removeItem(HIDDEN_KEY);
+      } catch (e) {}
+      this._render();
+    });
     const tip = root.querySelector(".tip");
     const chart = root.querySelector(".chart");
     if (!tip || !this._chartView) return;
@@ -376,7 +426,7 @@ class StromTarifeCard extends HTMLElement {
         const period = this._chart.monthly
           ? b.start.toLocaleString("de-DE", { month: "long", year: "numeric" })
           : String(b.start.getFullYear());
-        tip.innerHTML = `<div class="t">${esc(period)}</div>${rows || '<div class="sub">keine Daten</div>'}<div class="r tot"><span>Gesamt</span><span>${v.fmt(sum)}</span></div>`;
+        tip.innerHTML = `<div class="t">${esc(period)}</div>${rows || '<div class="sub">keine Daten</div>'}<div class="r tot"><span>${v.anyHidden ? "Summe (angezeigt)" : "Gesamt"}</span><span>${v.fmt(sum)}</span></div>`;
         tip.hidden = false;
         const box = chart.getBoundingClientRect();
         const r = el.getBoundingClientRect();
