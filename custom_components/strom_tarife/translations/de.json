@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "Stromtarife einrichten",
-        "description": "Wähle den Stromzähler (Gesamtverbrauch) und die Geräte, deren Kosten einzeln berechnet werden sollen.",
+        "description": "Wähle die Geräte (Energie-Sensoren), deren Stromkosten einzeln berechnet werden sollen. Zählerstände und Verträge pflegst du danach in den Tabellen auf dem Dashboard.",
         "data": {
-          "zaehler": "Stromzähler",
           "geraete": "Geräte (Energie-Sensoren)"
         }
       }
@@ -19,9 +18,8 @@
     "step": {
       "init": {
         "title": "Stromtarife",
-        "description": "Zähler und Geräte ändern. Danach werden alle Kosten neu berechnet.",
+        "description": "Geräte ändern. Danach werden alle Kosten neu berechnet.",
         "data": {
-          "zaehler": "Stromzähler",
           "geraete": "Geräte (Energie-Sensoren)"
         }
       }
@@ -37,6 +35,9 @@
       },
       "anbieter": {
         "name": "Anbieter"
+      },
+      "zaehlerstand": {
+        "name": "Zählerstand"
       }
     },
     "button": {

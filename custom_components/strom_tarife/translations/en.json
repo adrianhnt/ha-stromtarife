@@ -3,9 +3,8 @@
     "step": {
       "user": {
         "title": "Set up electricity tariffs",
-        "description": "Select the electricity meter (total consumption) and the devices whose costs should be calculated individually.",
+        "description": "Select the devices (energy sensors) whose costs should be calculated individually. Meter readings and contracts are managed in the dashboard tables.",
         "data": {
-          "zaehler": "Electricity meter",
           "geraete": "Devices (energy sensors)"
         }
       }
@@ -19,9 +18,8 @@
     "step": {
       "init": {
         "title": "Electricity tariffs",
-        "description": "Change meter and devices. All costs are recalculated afterwards.",
+        "description": "Change devices. All costs are recalculated afterwards.",
         "data": {
-          "zaehler": "Electricity meter",
           "geraete": "Devices (energy sensors)"
         }
       }
@@ -37,6 +35,9 @@
       },
       "anbieter": {
         "name": "Provider"
+      },
+      "zaehlerstand": {
+        "name": "Meter reading"
       }
     },
     "button": {
