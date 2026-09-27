@@ -176,6 +176,8 @@ function basePrice(vertraege, p, g, bucketStarts) {
   return out;
 }
 
+const hatchCss = (c) => `repeating-linear-gradient(45deg, ${c} 0 2px, transparent 2px 4px)`;
+
 const readingDate = (iso) => {
   const [dd, t] = iso.split("T");
   const [yy, mm, day] = dd.split("-").map(Number);
@@ -244,8 +246,7 @@ const STYLE = `
   /* von rechts: Datum ‹ › immer außen rechts (Pfeile direkt nebeneinander), „Heute“ links daneben oder bei Platzmangel darunter */
   .pnav { display: flex; flex-direction: row-reverse; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
   .psel { display: flex; align-items: center; gap: 2px; }
-  /* feste Breite, damit „Heute“ und die Klickfläche beim Blättern nicht springen */
-  .plabel { background: transparent; color: var(--primary-text-color); padding: 4px 8px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-weight: 500; width: 14.5em; max-width: 100%; box-sizing: border-box; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .plabel { background: transparent; color: var(--primary-text-color); padding: 4px 8px; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; max-width: 100%; box-sizing: border-box; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .plabel .pl { overflow: hidden; text-overflow: ellipsis; }
   .nav[disabled] { opacity: 0.3; cursor: default; }
   .small { padding: 4px 8px; font-size: 0.9em; }
@@ -501,11 +502,35 @@ class StromTarifeCard extends HTMLElement {
       const untracked = g !== "hour" && totMap.has(k) ? Math.max(0, totMap.get(k) - sum(values)) : 0;
       return { start: b, values, untracked, base: baseMap.get(k) ?? 0 };
     });
+    if (g === "hour") this._estimateUntrackedHours(buckets, totMap);
     const totals = devices.map((_, i) => sum(buckets.map((b) => b.values[i])));
-    const untrackedTotal =
-      g === "hour" ? (totMap.size ? Math.max(0, sum([...totMap.values()]) - sum(totals)) : 0) : sum(buckets.map((b) => b.untracked));
+    const untrackedTotal = sum(buckets.map((b) => b.untracked));
     const baseTotal = sum(buckets.map((b) => b.base));
     this._chart = { kwh, g, period: p, series: devices.map((d) => d.name), buckets, totals, untrackedTotal, untrackedKnown: totMap.size > 0, baseTotal };
+  }
+
+  // Der Zähler hat nur Tageswerte: „Nicht erfasst“ eines Tages (Zähler minus Geräte, wie in der Tagesansicht)
+  // gleichmäßig auf die Stunden verteilen, die der Zählerwert abdeckt – bis zur letzten Ablesung, nicht in die Zukunft
+  _estimateUntrackedHours(buckets, totMap) {
+    const last = this._data.ablesungen[0];
+    const stop = Math.min(Date.now(), last ? readingDate(last.zeitpunkt).getTime() : 0);
+    const byDay = new Map();
+    for (const b of buckets) {
+      const k = bucketKey(b.start, "day");
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(b);
+    }
+    for (const [k, hours] of byDay) {
+      if (!totMap.has(k)) continue;
+      const rest = Math.max(0, totMap.get(k) - hours.reduce((a, b) => a + b.values.reduce((x, y) => x + y, 0), 0));
+      const share = (b) => Math.max(0, Math.min(b.start.getTime() + 36e5, stop) - b.start.getTime()) / 36e5;
+      const weight = hours.reduce((a, b) => a + share(b), 0);
+      if (!rest || !weight) continue;
+      for (const b of hours) {
+        b.untracked = (rest * share(b)) / weight;
+        b.estimated = true;
+      }
+    }
   }
 
   _renderPeriodBar() {
@@ -575,7 +600,7 @@ class StromTarifeCard extends HTMLElement {
     const hidden = this._hidden;
     const series = [
       ...names.map((n, i) => ({ key: n, name: n, color: colors[i], total: totals[i], idx: i })),
-      { key: UNTRACKED, name: "Nicht erfasst", color: grey, total: c.untrackedTotal, idx: -1, unknown: !c.untrackedKnown },
+      { key: UNTRACKED, name: "Nicht erfasst", color: grey, total: c.untrackedTotal, idx: -1, unknown: !c.untrackedKnown, estimated: c.g === "hour" },
     ].map((s) => ({ ...s, on: !hidden.has(s.key) }));
     // Grundpreis: Zeile und Schalter setzen dieselbe globale Einstellung (nicht die Ausblend-Liste der Geräte)
     if (!c.kwh) series.push({ key: BASE, name: "Grundpreis", color: baseColor, total: c.baseTotal, idx: -2, on: showBase, base: true });
@@ -619,10 +644,14 @@ class StromTarifeCard extends HTMLElement {
       r = Math.min(r, h, w / 2);
       return `M${x},${yTop + h}V${yTop + r}Q${x},${yTop} ${x + r},${yTop}H${x + w - r}Q${x + w},${yTop} ${x + w},${yTop + r}V${yTop + h}Z`;
     };
+    // Geschätzte Werte („Nicht erfasst“ in der Stundenansicht) schraffiert
+    const hatchId = `st-hatch-${(this.__uid ??= Math.random().toString(36).slice(2, 8))}`;
+    svg += `<defs><pattern id="${hatchId}" patternUnits="userSpaceOnUse" width="5" height="5" patternTransform="rotate(45)"><rect width="5" height="5" fill="${grey}" fill-opacity="0.35"/><rect width="2.5" height="5" fill="${grey}"/></pattern></defs>`;
     buckets.forEach((b, i) => {
       const x = L + band * i + (band - bw) / 2;
       // Grundpreis als Sockel unten, darüber Geräte und „Nicht erfasst“
-      const parts = [[b.base, baseColor, BASE], ...b.values.map((v, k) => [v, colors[k], names[k]]), [b.untracked, grey, UNTRACKED]].filter(
+      const unColor = b.estimated ? `url(#${hatchId})` : grey;
+      const parts = [[b.base, baseColor, BASE], ...b.values.map((v, k) => [v, colors[k], names[k]]), [b.untracked, unColor, UNTRACKED]].filter(
         ([v]) => v > 0
       );
       let acc = 0;
@@ -668,7 +697,7 @@ class StromTarifeCard extends HTMLElement {
     const rows = series
       .map(
         (s) => `<tr class="srow${s.on ? "" : " off"}" ${s.base ? "data-base-row" : `data-series="${esc(s.key)}"`} data-k="${esc(s.key)}">
-          <td><button class="lg" aria-pressed="${s.on}" title="${s.base ? (s.on ? "Ohne Grundpreis rechnen" : "Mit Grundpreis rechnen") : s.on ? "Ausblenden" : "Einblenden"}"><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</button></td>
+          <td><button class="lg" aria-pressed="${s.on}" title="${s.base ? (s.on ? "Ohne Grundpreis rechnen" : "Mit Grundpreis rechnen") : s.on ? "Ausblenden" : "Einblenden"}"><span class="sw" style="background:${s.estimated ? hatchCss(s.color) : s.color}"></span>${esc(s.name)}</button></td>
           <td class="num">${s.unknown ? '<span class="sub">keine Zählerwerte</span>' : fmt(s.total)}</td>
           <td class="num pct">${s.on && !s.unknown ? pct(s.total, visibleTotal) : "–"}</td>
         </tr>`
@@ -686,7 +715,8 @@ class StromTarifeCard extends HTMLElement {
     const notes = ["Anteile beziehen sich auf die angezeigten Reihen im gewählten Zeitraum. „Nicht erfasst“ = Zähler minus Geräte."];
     if (last && c.period.end > readingDate(last.zeitpunkt))
       notes.push(`Zählerwerte gibt es bis zur letzten Ablesung (${fmtTime(last.zeitpunkt)}); danach fehlt „Nicht erfasst“.`);
-    if (c.g === "hour") notes.push("Der Zähler liefert Tageswerte: „Nicht erfasst“ steht in der Aufteilung, aber nicht in den Stundenbalken.");
+    if (c.g === "hour")
+      notes.push("Der Zähler liefert nur Tageswerte: „Nicht erfasst“ ist in den Stundenbalken geschätzt (Tageswert gleichmäßig verteilt, schraffiert).");
     if (!c.kwh)
       notes.push(
         showBase
@@ -775,7 +805,11 @@ class StromTarifeCard extends HTMLElement {
       el.addEventListener("mouseenter", () => {
         const b = v.buckets[+el.dataset.i];
         const sum = b.values.reduce((a, x) => a + x, 0) + b.untracked + b.base;
-        const rows = [["Grundpreis", b.base, v.baseColor], ...b.values.map((val, k) => [v.names[k], val, v.colors[k]]), ["Nicht erfasst", b.untracked, v.grey]]
+        const rows = [
+          ["Grundpreis", b.base, v.baseColor],
+          ...b.values.map((val, k) => [v.names[k], val, v.colors[k]]),
+          [b.estimated ? "Nicht erfasst (geschätzt)" : "Nicht erfasst", b.untracked, b.estimated ? hatchCss(v.grey) : v.grey],
+        ]
           .filter(([, val]) => val > 0)
           .reverse()
           .map(

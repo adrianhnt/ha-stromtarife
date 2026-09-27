@@ -76,12 +76,12 @@ Die Option `ansicht` bestimmt, was die Karte zeigt:
 
 **`diagramm`**
 - Zeitraumwahl wie im Energie-Dashboard: Tag, Woche, Monat, Jahr, Gesamt, ‹ ›, „Heute“, Kalender mit Von/Bis.
-- Zeitraumzeile rechts außen: `[Heute] Datum ‹ ›`. Das Datumsfeld hat eine feste Breite, die Pfeile stehen direkt nebeneinander, nichts springt beim Blättern. Bei Platzmangel rutscht „Heute“ unter die Auswahl. Kein Kalender-Icon.
+- Zeitraumzeile rechts außen: `[Heute] Datum ‹ ›`, direkt nebeneinander. Die Pfeile stehen ganz rechts und springen beim Blättern nicht. Bei Platzmangel rutscht „Heute“ unter die Auswahl. Kein Kalender-Icon.
 - Das Balkenraster richtet sich nach der Länge: bis 2 Tage Stunden, bis 62 Tage Tage, bis etwa 3 Jahre Monate, darüber Jahre.
 - Gestapelte Balken je Gerät plus „Nicht erfasst“ (Zähler minus Geräte).
 - Darunter ein Ringdiagramm mit Tabelle (Wert und Anteil in %). **Die Anteile beziehen sich immer auf die gerade angezeigten Reihen im Zeitraum.**
 - Ein Klick auf eine Zeile blendet die Reihe aus oder ein. Gespeichert wird das in localStorage `strom-tarife-diagramm-ausgeblendet`.
-- In der Stundenansicht steht „Nicht erfasst“ nur in Ring und Tabelle, weil der Zähler nur Tageswerte hat.
+- In der Stundenansicht ist „Nicht erfasst“ geschätzt: Zähler minus Geräte des Tages, gleichmäßig auf die Stunden verteilt, die der Zählerwert abdeckt (bis zur letzten Ablesung, nicht in die Zukunft). Balken, Legende und Tooltip zeigen es schraffiert, der Tooltip sagt „geschätzt“.
 - **Grundpreis** (nur in €): eigene Reihe, unten im Stapel. Jeder Monat bekommt 1/12 des Jahrespreises bzw. den Monatspreis des an dem Tag gültigen Vertrags (`contractOn` = `contract_at`), gleichmäßig auf Tage und Stunden verteilt, bis jetzt. Vertragswechsel im Zeitraum ergeben so automatisch mehrere Grundpreise. Wird im Browser berechnet, nicht im Recorder.
 - Schalter „mit Grundpreis“ neben kWh/€. Startwert aus `grundpreis: true|false` (Standard an), danach localStorage `strom-tarife-diagramm-grundpreis`. Ein Klick auf die Zeile „Grundpreis“ setzt dieselbe Einstellung wie der Schalter (sie zählt nicht zu den ausgeblendeten Reihen, „Alle anzeigen“ lässt sie unberührt).
 - Optionen: `einheit: kwh|eur`, `zeitraum: tag|woche|monat|jahr|gesamt`, `grundpreis: true|false`. Alte Werte `monate`/`jahre` werden verstanden.
