@@ -13,7 +13,7 @@ from homeassistant.helpers.event import async_track_time_change
 
 from . import StromTarifeConfigEntry
 from .const import DOMAIN, NAME, SIGNAL_UPDATED
-from .tarife import StromTarife, grundpreis_pro_jahr
+from .tarife import StromTarife, grundpreis_pro_jahr, grundpreis_pro_monat
 
 
 def device_info(entry_id: str) -> DeviceInfo:
@@ -34,6 +34,7 @@ async def async_setup_entry(
         [
             ArbeitspreisSensor(manager, entry.entry_id),
             GrundpreisSensor(manager, entry.entry_id),
+            GrundpreisMonatSensor(manager, entry.entry_id),
             AnbieterSensor(manager, entry.entry_id),
             ZaehlerstandSensor(manager, entry.entry_id),
         ]
@@ -103,6 +104,20 @@ class GrundpreisSensor(_TarifSensor):
     def native_value(self) -> float | None:
         contract = self.manager.current_contract()
         return grundpreis_pro_jahr(contract) if contract else None
+
+
+class GrundpreisMonatSensor(_TarifSensor):
+    _attr_native_unit_of_measurement = "€/Monat"
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:cash-multiple"
+
+    def __init__(self, manager: StromTarife, entry_id: str) -> None:
+        super().__init__(manager, entry_id, "grundpreis_monat")
+
+    @property
+    def native_value(self) -> float | None:
+        contract = self.manager.current_contract()
+        return grundpreis_pro_monat(contract) if contract else None
 
 
 class AnbieterSensor(_TarifSensor):

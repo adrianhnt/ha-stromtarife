@@ -1,11 +1,13 @@
 // Stromtarife – Dashboard-Karte (Verträge als Tabelle / Kostenübersicht)
 // type: custom:strom-tarife-card
-// ansicht: vertraege | zaehler | kosten | diagramm (einheit: kwh|eur, zeitraum: tag|woche|monat|jahr|gesamt)
+// ansicht: vertraege | zaehler | kosten | diagramm (einheit: kwh|eur, zeitraum: tag|woche|monat|jahr|gesamt, grundpreis: true|false)
 
 const DOMAIN = "strom_tarife";
 const EVENT = "strom-tarife-updated";
 const HIDDEN_KEY = "strom-tarife-diagramm-ausgeblendet";
 const UNTRACKED = "__nicht_erfasst";
+const BASE = "__grundpreis";
+const BASE_KEY = "strom-tarife-diagramm-grundpreis";
 
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const num2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -140,6 +142,40 @@ function bucketTitle(d, g) {
   return String(d.getFullYear());
 }
 
+// ---------------------------------------------------------------- Grundpreis (Diagramm)
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Vertrag an einem Tag – wie contract_at im Backend: bei Überschneidung gilt der spätere Beginn
+function contractOn(vertraege, iso) {
+  let best = null;
+  for (const v of vertraege) if (v.von <= iso && (!v.bis || iso <= v.bis) && (!best || v.von > best.von)) best = v;
+  return best;
+}
+
+const gpPerMonth = (v) => (v?.grundpreis_eur || 0) / (v?.grundpreis_einheit === "monat" ? 1 : 12);
+
+// Grundpreis je Balken: jeder Monat trägt 1/12 des Jahrespreises (bzw. den Monatspreis) des an dem Tag
+// gültigen Vertrags, gleichmäßig auf seine Tage und Stunden verteilt – bis jetzt, nicht in die Zukunft
+function basePrice(vertraege, p, g, bucketStarts) {
+  const out = new Map(bucketStarts.map((b) => [b.getTime(), 0]));
+  const stop = Math.min(p.end.getTime(), Date.now());
+  for (let d = startOfDay(p.start); d.getTime() < stop; d = addDays(d, 1)) {
+    const next = addDays(d, 1);
+    const perDay = gpPerMonth(contractOn(vertraege, isoDay(d))) / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    if (!perDay) continue;
+    const from = Math.max(d.getTime(), p.start.getTime());
+    const to = Math.min(next.getTime(), stop);
+    const perMs = perDay / (next - d); // echte Tageslänge, auch bei Zeitumstellung
+    if (g !== "hour") {
+      const k = bucketKey(d, g);
+      out.set(k, (out.get(k) ?? 0) + perMs * (to - from));
+      continue;
+    }
+    for (let t = from; t < to; t += 36e5) out.set(t, (out.get(t) ?? 0) + perMs * (Math.min(t + 36e5, to) - t));
+  }
+  return out;
+}
+
 const readingDate = (iso) => {
   const [dd, t] = iso.split("T");
   const [yy, mm, day] = dd.split("-").map(Number);
@@ -190,7 +226,9 @@ const STYLE = `
   .seg { display: inline-flex; border: 1px solid var(--divider-color); border-radius: 8px; overflow: hidden; }
   .seg button { border-radius: 0; background: transparent; color: var(--secondary-text-color); padding: 4px 12px; }
   .seg button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-  .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+  .controls { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; }
+  label.tgl { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 0.9em; color: var(--primary-text-color); cursor: pointer; white-space: nowrap; }
+  label.tgl input { width: auto; margin: 0; padding: 0; accent-color: var(--primary-color); cursor: pointer; }
   .chart { position: relative; }
   .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
   .chart .gridline { stroke: var(--divider-color); stroke-width: 1; }
@@ -203,9 +241,12 @@ const STYLE = `
   .tip .tot { border-top: 1px solid var(--divider-color); margin-top: 4px; padding-top: 4px; font-weight: 500; }
   .period { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
   .seg.kinds button { padding: 4px 10px; }
-  .pnav { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
-  .plabel { background: transparent; color: var(--primary-text-color); padding: 4px 8px; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
-  .plabel ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  /* von rechts: Datum ‹ › immer außen rechts (Pfeile direkt nebeneinander), „Heute“ links daneben oder bei Platzmangel darunter */
+  .pnav { display: flex; flex-direction: row-reverse; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
+  .psel { display: flex; align-items: center; gap: 2px; }
+  /* feste Breite, damit „Heute“ und die Klickfläche beim Blättern nicht springen */
+  .plabel { background: transparent; color: var(--primary-text-color); padding: 4px 8px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-weight: 500; width: 14.5em; max-width: 100%; box-sizing: border-box; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .plabel .pl { overflow: hidden; text-overflow: ellipsis; }
   .nav[disabled] { opacity: 0.3; cursor: default; }
   .small { padding: 4px 8px; font-size: 0.9em; }
   .picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 10px; padding: 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
@@ -368,6 +409,26 @@ class StromTarifeCard extends HTMLElement {
     return this.__chartMode ?? this._config.einheit ?? "eur";
   }
 
+  // Grundpreis im €-Diagramm: Startwert aus `grundpreis: true|false`, danach merkt sich der Browser den Schalter
+  get _withBase() {
+    if (this.__withBase === undefined) {
+      let saved = null;
+      try {
+        saved = localStorage.getItem(BASE_KEY);
+      } catch (e) {}
+      this.__withBase = saved === null ? this._config.grundpreis !== false : saved === "1";
+    }
+    return this.__withBase;
+  }
+
+  _setWithBase(on) {
+    this.__withBase = on;
+    try {
+      localStorage.setItem(BASE_KEY, on ? "1" : "0");
+    } catch (e) {}
+    this._render();
+  }
+
   _firstYear() {
     const first = this._data?.ablesungen?.[this._data.ablesungen.length - 1];
     return first ? Number(first.zeitpunkt.slice(0, 4)) : new Date().getFullYear();
@@ -432,16 +493,19 @@ class StromTarifeCard extends HTMLElement {
     const sum = (a) => a.reduce((x, y) => x + y, 0);
     const devMaps = devices.map((d) => toMap(res[idOf(d)], g));
     const totMap = total ? toMap(resTot[idOf(total)], totalPeriod) : new Map();
-    const buckets = bucketsFor(p, g).map((b) => {
+    const starts = bucketsFor(p, g);
+    const baseMap = kwh ? new Map() : basePrice(this._data.vertraege, p, g, starts);
+    const buckets = starts.map((b) => {
       const k = b.getTime();
       const values = devMaps.map((m) => Math.max(0, m.get(k) ?? 0));
       const untracked = g !== "hour" && totMap.has(k) ? Math.max(0, totMap.get(k) - sum(values)) : 0;
-      return { start: b, values, untracked };
+      return { start: b, values, untracked, base: baseMap.get(k) ?? 0 };
     });
     const totals = devices.map((_, i) => sum(buckets.map((b) => b.values[i])));
     const untrackedTotal =
       g === "hour" ? (totMap.size ? Math.max(0, sum([...totMap.values()]) - sum(totals)) : 0) : sum(buckets.map((b) => b.untracked));
-    this._chart = { kwh, g, period: p, series: devices.map((d) => d.name), buckets, totals, untrackedTotal, untrackedKnown: totMap.size > 0 };
+    const baseTotal = sum(buckets.map((b) => b.base));
+    this._chart = { kwh, g, period: p, series: devices.map((d) => d.name), buckets, totals, untrackedTotal, untrackedKnown: totMap.size > 0, baseTotal };
   }
 
   _renderPeriodBar() {
@@ -469,7 +533,7 @@ class StromTarifeCard extends HTMLElement {
       : "";
     return `<div class="period">
         <div class="seg kinds">${kinds}</div>
-        <div class="pnav">${nav}<button class="plabel" id="p-open" title="Zeitraum frei wählen"><ha-icon icon="mdi:calendar"></ha-icon>${esc(periodLabel(p))}</button>${navNext}${today}</div>
+        <div class="pnav"><div class="psel"><button class="plabel" id="p-open" title="Zeitraum frei wählen"><span class="pl">${esc(periodLabel(p))}</span></button>${nav}${navNext}</div>${today}</div>
       </div>${picker}`;
   }
 
@@ -483,7 +547,10 @@ class StromTarifeCard extends HTMLElement {
     ]
       .map(([v, label]) => `<button data-mode="${v}" class="${this._chartMode === v ? "on" : ""}">${label}</button>`)
       .join("")}</div>`;
-    const head = `<div class="head"><div class="title">${esc(title)}</div>${modeSeg}</div>${this._renderPeriodBar()}`;
+    const baseToggle = kwhMode
+      ? ""
+      : `<label class="tgl" title="Grundpreis anteilig je Monat einrechnen"><input type="checkbox" id="base-toggle"${this._withBase ? " checked" : ""}>mit Grundpreis</label>`;
+    const head = `<div class="head"><div class="title">${esc(title)}</div><div class="controls">${baseToggle}${modeSeg}</div></div>${this._renderPeriodBar()}`;
     if (!c) return head + `<div class="empty">Lädt …</div>`;
 
     const dark = !!this._hass?.themes?.darkMode;
@@ -491,6 +558,8 @@ class StromTarifeCard extends HTMLElement {
       ? ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
       : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
     const grey = dark ? "#6f6e69" : "#b4b2a9";
+    const baseColor = dark ? "#a8a69d" : "#5f5e5a";
+    const showBase = !c.kwh && this._withBase;
     // Mehr als 8 Geräte: Rest in „Weitere Geräte“ zusammenfassen (keine erfundenen Farben)
     let names = [...c.series];
     let buckets = c.buckets.map((b) => ({ ...b, values: [...b.values] }));
@@ -508,15 +577,18 @@ class StromTarifeCard extends HTMLElement {
       ...names.map((n, i) => ({ key: n, name: n, color: colors[i], total: totals[i], idx: i })),
       { key: UNTRACKED, name: "Nicht erfasst", color: grey, total: c.untrackedTotal, idx: -1, unknown: !c.untrackedKnown },
     ].map((s) => ({ ...s, on: !hidden.has(s.key) }));
+    // Grundpreis: Zeile und Schalter setzen dieselbe globale Einstellung (nicht die Ausblend-Liste der Geräte)
+    if (!c.kwh) series.push({ key: BASE, name: "Grundpreis", color: baseColor, total: c.baseTotal, idx: -2, on: showBase, base: true });
     const showDev = names.map((n) => !hidden.has(n));
     const showUn = !hidden.has(UNTRACKED);
     buckets = buckets.map((b) => ({
       ...b,
       values: b.values.map((v, k) => (showDev[k] ? v : 0)),
       untracked: showUn ? b.untracked : 0,
+      base: showBase ? b.base : 0,
     }));
     const visibleTotal = series.filter((s) => s.on).reduce((a, s) => a + s.total, 0);
-    const anyHidden = series.some((s) => !s.on);
+    const anyHidden = series.some((s) => !s.on && !s.base);
 
     const fmt = (v) =>
       c.kwh ? `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: v < 10 ? 2 : v < 100 ? 1 : 0 }).format(v)} kWh` : eur.format(v);
@@ -525,7 +597,7 @@ class StromTarifeCard extends HTMLElement {
     // ---------------- Balken
     const W = Math.max(300, Math.round((this.getBoundingClientRect().width || 832) - 32));
     const H = W < 500 ? 200 : 260, L = 56, R = 4, T = 10, B = 26;
-    const max = Math.max(...buckets.map((b) => b.values.reduce((a, v) => a + v, 0) + b.untracked), 0);
+    const max = Math.max(...buckets.map((b) => b.values.reduce((a, v) => a + v, 0) + b.untracked + b.base), 0);
     const niceTop = max > 0 ? max : c.kwh ? 1 : 1;
     const step = (() => {
       const raw = niceTop / 4;
@@ -549,7 +621,10 @@ class StromTarifeCard extends HTMLElement {
     };
     buckets.forEach((b, i) => {
       const x = L + band * i + (band - bw) / 2;
-      const parts = [...b.values.map((v, k) => [v, colors[k], names[k]]), [b.untracked, grey, UNTRACKED]].filter(([v]) => v > 0);
+      // Grundpreis als Sockel unten, darüber Geräte und „Nicht erfasst“
+      const parts = [[b.base, baseColor, BASE], ...b.values.map((v, k) => [v, colors[k], names[k]]), [b.untracked, grey, UNTRACKED]].filter(
+        ([v]) => v > 0
+      );
       let acc = 0;
       parts.forEach(([v, color, key], k) => {
         const y0 = y(acc), y1 = y(acc + v);
@@ -592,8 +667,8 @@ class StromTarifeCard extends HTMLElement {
     }
     const rows = series
       .map(
-        (s) => `<tr class="srow${s.on ? "" : " off"}" data-series="${esc(s.key)}" data-k="${esc(s.key)}">
-          <td><button class="lg" aria-pressed="${s.on}" title="${s.on ? "Ausblenden" : "Einblenden"}"><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</button></td>
+        (s) => `<tr class="srow${s.on ? "" : " off"}" ${s.base ? "data-base-row" : `data-series="${esc(s.key)}"`} data-k="${esc(s.key)}">
+          <td><button class="lg" aria-pressed="${s.on}" title="${s.base ? (s.on ? "Ohne Grundpreis rechnen" : "Mit Grundpreis rechnen") : s.on ? "Ausblenden" : "Einblenden"}"><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</button></td>
           <td class="num">${s.unknown ? '<span class="sub">keine Zählerwerte</span>' : fmt(s.total)}</td>
           <td class="num pct">${s.on && !s.unknown ? pct(s.total, visibleTotal) : "–"}</td>
         </tr>`
@@ -612,9 +687,14 @@ class StromTarifeCard extends HTMLElement {
     if (last && c.period.end > readingDate(last.zeitpunkt))
       notes.push(`Zählerwerte gibt es bis zur letzten Ablesung (${fmtTime(last.zeitpunkt)}); danach fehlt „Nicht erfasst“.`);
     if (c.g === "hour") notes.push("Der Zähler liefert Tageswerte: „Nicht erfasst“ steht in der Aufteilung, aber nicht in den Stundenbalken.");
-    if (!c.kwh) notes.push("Kosten ohne Grundpreis.");
+    if (!c.kwh)
+      notes.push(
+        showBase
+          ? "Grundpreis: je Monat 1/12 des Jahrespreises (bzw. der Monatspreis) des jeweils gültigen Vertrags, anteilig bis heute."
+          : "Kosten ohne Grundpreis."
+      );
 
-    this._chartView = { buckets, names, colors, grey, fmt, pct, anyHidden, g: c.g };
+    this._chartView = { buckets, names, colors, grey, baseColor, fmt, pct, anyHidden, g: c.g };
     return `${head}${bars}${split}<div class="status">${notes.join(" ")}</div>`;
   }
 
@@ -630,6 +710,8 @@ class StromTarifeCard extends HTMLElement {
         this._render();
       })
     );
+    root.querySelector("#base-toggle")?.addEventListener("change", (e) => this._setWithBase(e.target.checked));
+    root.querySelector("[data-base-row]")?.addEventListener("click", () => this._setWithBase(!this._withBase));
     root.querySelectorAll("[data-kind]").forEach((b) =>
       b.addEventListener("click", () => {
         const p = this._period;
@@ -692,8 +774,8 @@ class StromTarifeCard extends HTMLElement {
     root.querySelectorAll(".hit").forEach((el) => {
       el.addEventListener("mouseenter", () => {
         const b = v.buckets[+el.dataset.i];
-        const sum = b.values.reduce((a, x) => a + x, 0) + b.untracked;
-        const rows = [...b.values.map((val, k) => [v.names[k], val, v.colors[k]]), ["Nicht erfasst", b.untracked, v.grey]]
+        const sum = b.values.reduce((a, x) => a + x, 0) + b.untracked + b.base;
+        const rows = [["Grundpreis", b.base, v.baseColor], ...b.values.map((val, k) => [v.names[k], val, v.colors[k]]), ["Nicht erfasst", b.untracked, v.grey]]
           .filter(([, val]) => val > 0)
           .reverse()
           .map(

@@ -33,6 +33,9 @@
       "grundpreis": {
         "name": "Base price"
       },
+      "grundpreis_monat": {
+        "name": "Base price per month"
+      },
       "anbieter": {
         "name": "Provider"
       },

@@ -13,7 +13,7 @@ custom_components/strom_tarife/
   __init__.py      Setup, Static Path für die Karte + add_extra_js_url (…/strom-tarife-card.js?v=<mtime beim Start>)
   tarife.py        Kern: Manager `StromTarife` – Speicher, Validierung, Statistik-Berechnung, Worker
   websocket.py     WS-Befehle für die Karte
-  sensor.py        Arbeitspreis (ct/kWh), Grundpreis (€/Jahr), Anbieter, Zählerstand
+  sensor.py        Arbeitspreis (ct/kWh), Grundpreis (€/Jahr und €/Monat), Anbieter, Zählerstand
   button.py        „Kosten neu berechnen“
   config_flow.py   nur Geräteauswahl (Energie-Sensoren, Option `geraete`)
   const.py         METER_STAT, STAT_PREFIX, TOTAL_ID="gesamt", UPDATE_MINUTE=12
@@ -25,7 +25,7 @@ dev/               lokale Testumgebung (Mock-hass, Screenshots, Python-Stub-Test
 
 - Speicher: `.storage/strom_tarife.vertraege` mit den Schlüsseln `vertraege` und `ablesungen`.
 - Vertrag: `id, anbieter, von, bis (None = offen), arbeitspreis_ct (2 Nachkommastellen), grundpreis_eur, grundpreis_einheit ("jahr"|"monat"), notiz`. Überschneiden sich Verträge, gilt der mit dem späteren Beginn. Lücken kosten 0 €.
-- Grundpreis wird nur erfasst und angezeigt und fließt **nicht** in die Kosten ein (bewusst offen). `grundpreis_pro_jahr()` rechnet Monatswerte ×12. Die Migration setzt eine fehlende Einheit auf „jahr“, ohne die Werte umzurechnen.
+- Grundpreis fließt **nicht** in die Kosten-Statistiken ein. Er erscheint nur in der Karte (`diagramm` in €, abschaltbar). `grundpreis_pro_jahr()` rechnet Monatswerte ×12, `grundpreis_pro_monat()` Jahreswerte ÷12. Die Migration setzt eine fehlende Einheit auf „jahr“, ohne die Werte umzurechnen.
 - Ablesung: `id, zeitpunkt ("YYYY-MM-DDTHH:MM", lokale Zeit), stand (kWh), notiz`. Validierung: nicht in der Zukunft, Stand monoton zu früheren und späteren Ablesungen.
 
 ## Statistiken (externe Statistiken im Recorder)
@@ -76,20 +76,24 @@ Die Option `ansicht` bestimmt, was die Karte zeigt:
 
 **`diagramm`**
 - Zeitraumwahl wie im Energie-Dashboard: Tag, Woche, Monat, Jahr, Gesamt, ‹ ›, „Heute“, Kalender mit Von/Bis.
+- Zeitraumzeile rechts außen: `[Heute] Datum ‹ ›`. Das Datumsfeld hat eine feste Breite, die Pfeile stehen direkt nebeneinander, nichts springt beim Blättern. Bei Platzmangel rutscht „Heute“ unter die Auswahl. Kein Kalender-Icon.
 - Das Balkenraster richtet sich nach der Länge: bis 2 Tage Stunden, bis 62 Tage Tage, bis etwa 3 Jahre Monate, darüber Jahre.
 - Gestapelte Balken je Gerät plus „Nicht erfasst“ (Zähler minus Geräte).
 - Darunter ein Ringdiagramm mit Tabelle (Wert und Anteil in %). **Die Anteile beziehen sich immer auf die gerade angezeigten Reihen im Zeitraum.**
 - Ein Klick auf eine Zeile blendet die Reihe aus oder ein. Gespeichert wird das in localStorage `strom-tarife-diagramm-ausgeblendet`.
 - In der Stundenansicht steht „Nicht erfasst“ nur in Ring und Tabelle, weil der Zähler nur Tageswerte hat.
-- Optionen: `einheit: kwh|eur`, `zeitraum: tag|woche|monat|jahr|gesamt`. Alte Werte `monate`/`jahre` werden verstanden.
+- **Grundpreis** (nur in €): eigene Reihe, unten im Stapel. Jeder Monat bekommt 1/12 des Jahrespreises bzw. den Monatspreis des an dem Tag gültigen Vertrags (`contractOn` = `contract_at`), gleichmäßig auf Tage und Stunden verteilt, bis jetzt. Vertragswechsel im Zeitraum ergeben so automatisch mehrere Grundpreise. Wird im Browser berechnet, nicht im Recorder.
+- Schalter „mit Grundpreis“ neben kWh/€. Startwert aus `grundpreis: true|false` (Standard an), danach localStorage `strom-tarife-diagramm-grundpreis`. Ein Klick auf die Zeile „Grundpreis“ setzt dieselbe Einstellung wie der Schalter (sie zählt nicht zu den ausgeblendeten Reihen, „Alle anzeigen“ lässt sie unberührt).
+- Optionen: `einheit: kwh|eur`, `zeitraum: tag|woche|monat|jahr|gesamt`, `grundpreis: true|false`. Alte Werte `monate`/`jahre` werden verstanden.
 
 Weitere Regeln für die Karte:
 - Kosten auf dem Dashboard immer auf Cent gerundet (`2,34 €`).
-- Bei Kosten den Hinweis „ohne Grundpreis“ anzeigen.
+- Bei Kosten ohne Grundpreis den Hinweis „ohne Grundpreis“ anzeigen, mit Grundpreis erklären, wie er verteilt wird.
 - **Diagramm-Regeln:** feste Farbfolge je Gerät, nie nach Rang umfärben.
   - hell: `#2a78d6 #eb6834 #1baf7a #eda100 #e87ba4 #008300 #4a3aa7 #e34948`
   - dunkel: `#3987e5 #d95926 #199e70 #c98500 #d55181 #008300 #9085e9 #e66767`
   - „Nicht erfasst“: grau, hell `#b4b2a9`, dunkel `#6f6e69`
+  - „Grundpreis“: hell `#5f5e5a`, dunkel `#a8a69d`
   - mehr als 8 Geräte werden zu „Weitere Geräte“ zusammengefasst
   - Balken höchstens 24 px breit, oben 4 px gerundet, 2 px Lücke zwischen Segmenten
   - keine zweite y-Achse
@@ -99,7 +103,7 @@ Weitere Regeln für die Karte:
 ## Lokal testen
 
 - Python: `python3 dev/test_tarife_stub.py` (HA-Module sind gestubbt, braucht Python ≥ 3.12, sonst nichts). Muss mit `OK` enden.
-- Karte: `dev/mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten`, direkt im Browser öffnen. Mock-hass mit synthetischen Statistiken.
+- Karte: `dev/mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&grundpreis=0`, direkt im Browser öffnen. Mock-hass mit synthetischen Statistiken.
 - Screenshots: `cd dev && npm install && node screenshot.mjs`. Das Ergebnis landet in `dev/out/`. Screenshots immer ansehen, bevor eine UI-Änderung fertig ist: dunkel, hell und schmal (390 px).
 - `node --check custom_components/strom_tarife/frontend/strom-tarife-card.js` vor jedem Commit.
 

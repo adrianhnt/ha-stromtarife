@@ -84,6 +84,11 @@ def grundpreis_pro_jahr(contract: dict[str, Any]) -> float:
     return round(value * 12, 2) if contract.get("grundpreis_einheit") == "monat" else value
 
 
+def grundpreis_pro_monat(contract: dict[str, Any]) -> float:
+    value = contract.get("grundpreis_eur") or 0
+    return value if contract.get("grundpreis_einheit") == "monat" else value / 12
+
+
 class StromTarife:
     """Verträge und Kostenberechnung."""
 

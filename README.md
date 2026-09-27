@@ -18,7 +18,7 @@ ansicht: vertraege   # oder: zaehler, kosten, diagramm
 - **vertraege** – Tabelle mit Hinzufügen / Bearbeiten / Löschen (nur Administratoren). Zeiträume ohne Vertrag werden angezeigt (sie kosten 0 €). Überschneiden sich Verträge, gilt der mit dem späteren Beginn.
 - **zaehler** – Ablesungen mit Verbrauch seit der vorherigen und Ø pro Tag, Hinzufügen / Bearbeiten / Löschen.
 - **kosten** – Kosten je Reihe für diesen Monat, dieses Jahr und das Vorjahr, auf Cent gerundet.
-- **diagramm** – Zeitraum wie im Energie-Dashboard wählbar (Tag / Woche / Monat / Jahr / Gesamt, vor- und zurückblättern, „Heute“, oder frei über den Kalender). Gestapelte Balken (Stunden, Tage, Monate oder Jahre – je nach Zeitraum) plus Ringdiagramm mit Tabelle: je Gerät und „Nicht erfasst“ (Zähler minus Geräte) Verbrauch bzw. Kosten und Anteil in %. Die Anteile beziehen sich immer auf das, was gerade angezeigt wird. Ein Klick auf eine Zeile blendet sie aus oder ein; die Auswahl merkt sich der Browser. Optional `einheit: kwh|eur` und `zeitraum: tag|woche|monat|jahr|gesamt` als Startwerte.
+- **diagramm** – Zeitraum wie im Energie-Dashboard wählbar (Tag / Woche / Monat / Jahr / Gesamt, vor- und zurückblättern, „Heute“, oder frei über den Kalender). Gestapelte Balken (Stunden, Tage, Monate oder Jahre – je nach Zeitraum) plus Ringdiagramm mit Tabelle: je Gerät und „Nicht erfasst“ (Zähler minus Geräte) Verbrauch bzw. Kosten und Anteil in %. Die Anteile beziehen sich immer auf das, was gerade angezeigt wird. Ein Klick auf eine Zeile blendet sie aus oder ein; die Auswahl merkt sich der Browser. In € kommt der Grundpreis als eigene Reihe dazu (Schalter „mit Grundpreis“): jeder Monat mit 1/12 des Jahrespreises bzw. dem Monatspreis des jeweils gültigen Vertrags, bis heute. Optional `einheit: kwh|eur`, `zeitraum: tag|woche|monat|jahr|gesamt` und `grundpreis: true|false` als Startwerte.
 
 ## Berechnung
 
@@ -29,11 +29,11 @@ Jede Stunde wird mit dem Arbeitspreis des Vertrags berechnet, der an diesem Tag 
 
 Gerätekosten werden stündlich (Minute 12) ergänzt. Nach jeder Änderung an Verträgen oder Ablesungen wird alles neu berechnet; manuell über den Knopf „Kosten neu berechnen“ oder den Dienst `strom_tarife.neu_berechnen`.
 
-Der Grundpreis wird gespeichert und angezeigt, fließt aber (noch) nicht in die Kosten ein.
+Der Grundpreis fließt nicht in die Kosten-Statistiken ein (die bleiben reine Arbeitspreis-Kosten, passend zum Energie-Dashboard). Die Karte `diagramm` rechnet ihn in € wahlweise dazu.
 
 ## Entitäten
 
-- `sensor.stromtarife_arbeitspreis` (ct/kWh), `sensor.stromtarife_grundpreis` (€/Jahr), `sensor.stromtarife_anbieter` – jeweils des heute gültigen Vertrags
+- `sensor.stromtarife_arbeitspreis` (ct/kWh), `sensor.stromtarife_grundpreis` (€/Jahr), `sensor.stromtarife_grundpreis_pro_monat` (€/Monat), `sensor.stromtarife_anbieter` – jeweils des heute gültigen Vertrags
 - `sensor.stromtarife_zahlerstand` – letzte Ablesung
 - `button.stromtarife_kosten_neu_berechnen`
 

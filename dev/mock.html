@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Lokale Vorschau der Karte ohne Home Assistant.
-     Aufruf: mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&breite=820
+     Aufruf: mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&breite=820&grundpreis=0
      Alle Daten sind synthetisch. -->
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stromtarife – Mock</title>
@@ -36,7 +36,8 @@ const lastReading = new Date(today.getFullYear(), today.getMonth(), today.getDat
 const data = {
   vertraege:[
     {id:'a',anbieter:'Beispiel Energie',von:iso(new Date(today.getFullYear(),today.getMonth()+1,1)),bis:null,arbeitspreis_ct:28.5,grundpreis_eur:150,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]},
-    {id:'b',anbieter:'Muster Strom',von:iso(new Date(today.getFullYear()-1,today.getMonth(),1)),bis:iso(new Date(today.getFullYear(),today.getMonth()+1,0)),arbeitspreis_ct:24.1,grundpreis_eur:12.5,grundpreis_einheit:'monat',notiz:'Testvertrag',aktiv:true,ueberschneidet:[]}],
+    {id:'b',anbieter:'Muster Strom',von:iso(new Date(today.getFullYear(),today.getMonth()-4,15)),bis:iso(new Date(today.getFullYear(),today.getMonth()+1,0)),arbeitspreis_ct:24.1,grundpreis_eur:12.5,grundpreis_einheit:'monat',notiz:'Testvertrag',aktiv:true,ueberschneidet:[]},
+    {id:'c',anbieter:'Alt Energie',von:(today.getFullYear()-3)+'-08-29',bis:iso(new Date(today.getFullYear(),today.getMonth()-4,14)),arbeitspreis_ct:30,grundpreis_eur:120,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]}],
   luecken:[],
   ablesungen:[
     {id:'x',zeitpunkt:isoMin(lastReading),stand:12345.6,notiz:'',verbrauch:420.5,tage:92,pro_tag:4.57},
@@ -69,6 +70,6 @@ const hass={user:{is_admin:true},themes:{darkMode:theme==='dark'},
     console.warn('Mock: unbekannter WS-Befehl', m); return data;
   }};
 const card=document.createElement('strom-tarife-card');
-card.setConfig({ansicht:q.get('ansicht')||'diagramm', einheit:q.get('einheit')||undefined, zeitraum:q.get('zeitraum')||undefined});
+card.setConfig({ansicht:q.get('ansicht')||'diagramm', einheit:q.get('einheit')||undefined, zeitraum:q.get('zeitraum')||undefined, grundpreis:q.get('grundpreis')==='0'?false:undefined});
 document.getElementById('host').appendChild(card); card.hass=hass;
 </script></body></html>
