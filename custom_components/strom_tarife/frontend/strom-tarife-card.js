@@ -1,6 +1,6 @@
 // Stromtarife – Dashboard-Karte (Verträge als Tabelle / Kostenübersicht)
 // type: custom:strom-tarife-card
-// ansicht: vertraege | zaehler | kosten | diagramm (einheit: kwh|eur, zeitraum: monate|jahre)
+// ansicht: vertraege | zaehler | kosten | diagramm (einheit: kwh|eur, zeitraum: tag|woche|monat|jahr|gesamt)
 
 const DOMAIN = "strom_tarife";
 const EVENT = "strom-tarife-updated";
@@ -34,6 +34,118 @@ const gpText = (v) => {
 };
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---------------------------------------------------------------- Zeiträume (Diagramm)
+const pct1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const KINDS = [
+  ["tag", "Tag"],
+  ["woche", "Woche"],
+  ["monat", "Monat"],
+  ["jahr", "Jahr"],
+  ["gesamt", "Gesamt"],
+];
+// ältere Konfiguration: monate -> monat, jahre -> gesamt
+const normKind = (k) => ({ monate: "monat", jahre: "gesamt" })[k] ?? (KINDS.some(([x]) => x === k) ? k : "monat");
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+function periodFor(kind, ref, firstYear) {
+  const d = startOfDay(ref);
+  if (kind === "tag") return { art: kind, start: d, end: addDays(d, 1) };
+  if (kind === "woche") {
+    const s = addDays(d, -((d.getDay() + 6) % 7));
+    return { art: kind, start: s, end: addDays(s, 7) };
+  }
+  if (kind === "monat") return { art: kind, start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+  if (kind === "jahr") return { art: kind, start: new Date(d.getFullYear(), 0, 1), end: new Date(d.getFullYear() + 1, 0, 1) };
+  return { art: "gesamt", start: new Date(firstYear ?? d.getFullYear(), 0, 1), end: new Date(new Date().getFullYear() + 1, 0, 1) };
+}
+
+// Balkenraster nach Länge des Zeitraums (wie im Energie-Dashboard)
+function granularity(p) {
+  const days = Math.round((p.end - p.start) / 864e5);
+  if (days <= 2) return "hour";
+  if (days <= 62) return "day";
+  if (days <= 1100) return "month";
+  return "year";
+}
+
+function bucketKey(d, g) {
+  if (g === "hour") return d.getTime();
+  if (g === "day") return startOfDay(d).getTime();
+  if (g === "month") return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  return new Date(d.getFullYear(), 0, 1).getTime();
+}
+
+function bucketsFor(p, g) {
+  const out = [];
+  if (g === "hour") {
+    for (let t = p.start.getTime(); t < p.end.getTime(); t += 36e5) out.push(new Date(t));
+    return out;
+  }
+  let d = new Date(bucketKey(p.start, g));
+  while (d < p.end) {
+    out.push(d);
+    d = g === "day" ? addDays(d, 1) : g === "month" ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : new Date(d.getFullYear() + 1, 0, 1);
+  }
+  return out;
+}
+
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t - y0) / 864e5 + 1) / 7);
+}
+
+const dfmt = (d, o) => d.toLocaleDateString("de-DE", o);
+const DMY = { day: "2-digit", month: "2-digit", year: "numeric" };
+
+function periodLabel(p) {
+  const last = addDays(p.end, -1);
+  switch (p.art) {
+    case "tag":
+      return dfmt(p.start, { weekday: "short", ...DMY });
+    case "woche":
+      return `KW ${isoWeek(p.start)} · ${dfmt(p.start, { day: "2-digit", month: "2-digit" })}–${dfmt(last, DMY)}`;
+    case "monat":
+      return dfmt(p.start, { month: "long", year: "numeric" });
+    case "jahr":
+      return String(p.start.getFullYear());
+    case "gesamt":
+      return `${p.start.getFullYear()}–${last.getFullYear()}`;
+    default:
+      return last.getTime() === p.start.getTime() ? dfmt(p.start, DMY) : `${dfmt(p.start, DMY)} – ${dfmt(last, DMY)}`;
+  }
+}
+
+function bucketLabel(d, g, p) {
+  if (g === "hour") return String(d.getHours());
+  if (g === "day") return p.art === "woche" ? `${dfmt(d, { weekday: "short" }).replace(".", "")} ${d.getDate()}.` : `${d.getDate()}.`;
+  if (g === "month") {
+    const m = dfmt(d, { month: "short" }).replace(".", "");
+    return d.getMonth() === 0 || d.getTime() === bucketKey(p.start, "month") ? `${m} ${String(d.getFullYear()).slice(2)}` : m;
+  }
+  return String(d.getFullYear());
+}
+
+function bucketTitle(d, g) {
+  if (g === "hour") {
+    const e = new Date(d.getTime() + 36e5);
+    return `${dfmt(d, DMY)}, ${d.getHours()}–${e.getHours() || 24} Uhr`;
+  }
+  if (g === "day") return dfmt(d, { weekday: "short", ...DMY });
+  if (g === "month") return dfmt(d, { month: "long", year: "numeric" });
+  return String(d.getFullYear());
+}
+
+const readingDate = (iso) => {
+  const [dd, t] = iso.split("T");
+  const [yy, mm, day] = dd.split("-").map(Number);
+  const [h, mi] = (t || "00:00").split(":").map(Number);
+  return new Date(yy, mm - 1, day, h, mi);
+};
 
 const STYLE = `
   :host { display: block; }
@@ -85,19 +197,41 @@ const STYLE = `
   .chart .axis { fill: var(--secondary-text-color); font-size: 11px; }
   .chart .hit { fill: transparent; cursor: default; }
   .chart .hit:hover { fill: var(--primary-text-color); fill-opacity: 0.05; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 0.85em; color: var(--secondary-text-color); }
-  .legend span.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-  .legend button.lg { background: transparent; color: var(--primary-text-color); padding: 3px 8px; border: 1px solid var(--divider-color); border-radius: 12px; font-size: 1em; }
-  .legend button.lg.off { color: var(--secondary-text-color); opacity: 0.55; text-decoration: line-through; }
-  .legend button.lg.off span.sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--secondary-text-color); }
-  .legend button.lg:hover { border-color: var(--secondary-text-color); }
-  .legend button.all { background: transparent; color: var(--primary-color); padding: 3px 4px; font-size: 1em; }
   .tip { position: absolute; pointer-events: none; background: var(--card-background-color, #fff); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px 10px; font-size: 0.85em; box-shadow: 0 4px 16px rgba(0,0,0,0.25); min-width: 170px; z-index: 2; }
   .tip .t { font-weight: 500; margin-bottom: 4px; }
   .tip .r { display: flex; justify-content: space-between; gap: 12px; }
   .tip .tot { border-top: 1px solid var(--divider-color); margin-top: 4px; padding-top: 4px; font-weight: 500; }
+  .period { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .seg.kinds button { padding: 4px 10px; }
+  .pnav { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+  .plabel { background: transparent; color: var(--primary-text-color); padding: 4px 8px; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+  .plabel ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  .nav[disabled] { opacity: 0.3; cursor: default; }
+  .small { padding: 4px 8px; font-size: 0.9em; }
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 0 0 10px; padding: 10px; border: 1px solid var(--divider-color); border-radius: 8px; }
+  .picker > div { flex: 1; min-width: 130px; }
+  .picker label { margin-top: 0; }
+  .picker .err { flex-basis: 100%; margin-top: 0; }
+  .split { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; margin-top: 16px; }
+  .split .pie { flex: none; margin: 0 auto; overflow: visible; }
+  .split .scroll { flex: 1; min-width: 260px; }
+  .pie .ptot { fill: var(--primary-text-color); font-size: 15px; font-weight: 500; }
+  .pie .psub { fill: var(--secondary-text-color); font-size: 11px; }
+  .pie .slice { stroke: var(--card-background-color, var(--ha-card-background, #fff)); stroke-width: 2; stroke-linejoin: round; }
+  .split [data-k] { transition: opacity 0.15s; }
+  .split .dim { opacity: 0.35; }
+  table.share td, table.share th { padding: 5px 8px; }
+  table.share tr.srow { cursor: pointer; }
+  table.share tr.srow:hover td { background: rgba(127, 127, 127, 0.08); }
+  table.share tr.off td { color: var(--secondary-text-color); }
+  table.share tr.off .lg { text-decoration: line-through; opacity: 0.6; }
+  table.share tr.off .sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--secondary-text-color); }
+  table.share .lg { background: transparent; color: inherit; padding: 0; text-align: left; font: inherit; }
+  table.share .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+  table.share tfoot td { font-weight: 500; border-bottom: none; }
+  table.share .pct { color: var(--secondary-text-color); }
+  .all { background: transparent; color: var(--primary-color); padding: 0; font-size: 0.95em; font-weight: 400; }
 `;
-
 class StromTarifeCard extends HTMLElement {
   setConfig(config) {
     this._config = { ansicht: "vertraege", ...config };
@@ -234,69 +368,122 @@ class StromTarifeCard extends HTMLElement {
     return this.__chartMode ?? this._config.einheit ?? "eur";
   }
 
-  get _chartRange() {
-    return this.__chartRange ?? this._config.zeitraum ?? "monate";
+  _firstYear() {
+    const first = this._data?.ablesungen?.[this._data.ablesungen.length - 1];
+    return first ? Number(first.zeitpunkt.slice(0, 4)) : new Date().getFullYear();
+  }
+
+  get _period() {
+    if (!this.__period) this.__period = periodFor(normKind(this._config.zeitraum), new Date(), this._firstYear());
+    return this.__period;
+  }
+
+  async _setPeriod(p) {
+    this.__period = p;
+    this.__picker = false;
+    this._chart = null;
+    this._render();
+    await this._loadChart();
+    this._render();
+  }
+
+  _shiftPeriod(dir) {
+    const p = this._period;
+    if (p.art === "gesamt") return;
+    if (p.art === "eigener") {
+      const span = Math.round((p.end - p.start) / 864e5);
+      return this._setPeriod({ art: "eigener", start: addDays(p.start, dir * span), end: addDays(p.end, dir * span) });
+    }
+    return this._setPeriod(periodFor(p.art, dir > 0 ? p.end : addDays(p.start, -1), this._firstYear()));
   }
 
   async _loadChart() {
+    const token = (this._chartToken = (this._chartToken || 0) + 1);
+    const p = this._period;
+    const g = granularity(p);
     const kwh = this._chartMode === "kwh";
-    const monthly = this._chartRange === "monate";
-    const now = new Date();
-    const buckets = [];
-    if (monthly) {
-      for (let i = 11; i >= 0; i--) buckets.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
-    } else {
-      const firstReading = this._data.ablesungen[this._data.ablesungen.length - 1];
-      const firstYear = firstReading ? Number(firstReading.zeitpunkt.slice(0, 4)) : now.getFullYear();
-      for (let y = firstYear; y <= now.getFullYear(); y++) buckets.push(new Date(y, 0, 1));
-    }
     const total = this._data.reihen.find((r) => r.id === "gesamt");
     const devices = this._data.reihen.filter((r) => r.id !== "gesamt");
     const idOf = (r) => (kwh ? r.source : r.statistic_id);
-    const ids = [idOf(total), ...devices.map(idOf)];
-    const res = await this._hass.callWS({
-      type: "recorder/statistics_during_period",
-      start_time: buckets[0].toISOString(),
-      statistic_ids: ids,
-      period: monthly ? "month" : "year",
-      types: ["change"],
-      units: { energy: "kWh" },
-    });
-    const byStart = (id) => {
+    // Der Zähler hat nur Tageswerte – bei Stundenbalken kommt „Nicht erfasst“ aus den Tagessummen
+    const totalPeriod = g === "hour" ? "day" : g;
+    const req = (ids, period) =>
+      ids.length
+        ? this._hass.callWS({
+            type: "recorder/statistics_during_period",
+            start_time: p.start.toISOString(),
+            end_time: p.end.toISOString(),
+            statistic_ids: ids,
+            period,
+            types: ["change"],
+            units: { energy: "kWh" },
+          })
+        : Promise.resolve({});
+    const [res, resTot] = await Promise.all([req(devices.map(idOf), g), req(total ? [idOf(total)] : [], totalPeriod)]);
+    if (token !== this._chartToken) return;
+    const toMap = (rows, gg) => {
       const m = new Map();
-      for (const row of res[id] || []) m.set(new Date(row.start).getTime(), row.change);
+      for (const row of rows || []) {
+        const k = bucketKey(new Date(row.start), gg);
+        m.set(k, (m.get(k) ?? 0) + (row.change ?? 0));
+      }
       return m;
     };
-    const totalMap = byStart(idOf(total));
-    const devMaps = devices.map((d) => byStart(idOf(d)));
-    this._chart = {
-      kwh,
-      monthly,
-      series: devices.map((d) => d.name),
-      buckets: buckets.map((b) => {
-        const key = b.getTime();
-        const values = devMaps.map((m) => Math.max(0, m.get(key) ?? 0));
-        const tot = totalMap.has(key) ? totalMap.get(key) : null;
-        const sumDev = values.reduce((a, v) => a + v, 0);
-        return { start: b, values, total: tot, untracked: tot === null ? 0 : Math.max(0, tot - sumDev) };
-      }),
-    };
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    const devMaps = devices.map((d) => toMap(res[idOf(d)], g));
+    const totMap = total ? toMap(resTot[idOf(total)], totalPeriod) : new Map();
+    const buckets = bucketsFor(p, g).map((b) => {
+      const k = b.getTime();
+      const values = devMaps.map((m) => Math.max(0, m.get(k) ?? 0));
+      const untracked = g !== "hour" && totMap.has(k) ? Math.max(0, totMap.get(k) - sum(values)) : 0;
+      return { start: b, values, untracked };
+    });
+    const totals = devices.map((_, i) => sum(buckets.map((b) => b.values[i])));
+    const untrackedTotal =
+      g === "hour" ? (totMap.size ? Math.max(0, sum([...totMap.values()]) - sum(totals)) : 0) : sum(buckets.map((b) => b.untracked));
+    this._chart = { kwh, g, period: p, series: devices.map((d) => d.name), buckets, totals, untrackedTotal, untrackedKnown: totMap.size > 0 };
+  }
+
+  _renderPeriodBar() {
+    const p = this._period;
+    const now = new Date();
+    const current = p.start <= now && now < p.end;
+    const kinds = KINDS.map(([k, label]) => `<button data-kind="${k}" class="${p.art === k ? "on" : ""}">${label}</button>`).join("");
+    const nav =
+      p.art === "gesamt"
+        ? ""
+        : `<button class="icon nav" data-shift="-1" title="Zurück" aria-label="Zurück"><ha-icon icon="mdi:chevron-left"></ha-icon></button>`;
+    const navNext =
+      p.art === "gesamt"
+        ? ""
+        : `<button class="icon nav" data-shift="1" title="Weiter" aria-label="Weiter"${p.end > now ? " disabled" : ""}><ha-icon icon="mdi:chevron-right"></ha-icon></button>`;
+    const today = !current && p.art !== "gesamt" ? `<button class="plain small" id="p-today">Heute</button>` : "";
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const picker = this.__picker
+      ? `<div class="picker">
+          <div><label>Von</label><input type="date" id="p-von" value="${iso(p.start)}"></div>
+          <div><label>Bis</label><input type="date" id="p-bis" value="${iso(addDays(p.end, -1))}"></div>
+          <button class="primary" id="p-apply">Anzeigen</button>
+          ${this.__pickerError ? `<div class="err">${esc(this.__pickerError)}</div>` : ""}
+        </div>`
+      : "";
+    return `<div class="period">
+        <div class="seg kinds">${kinds}</div>
+        <div class="pnav">${nav}<button class="plabel" id="p-open" title="Zeitraum frei wählen"><ha-icon icon="mdi:calendar"></ha-icon>${esc(periodLabel(p))}</button>${navNext}${today}</div>
+      </div>${picker}`;
   }
 
   _renderChart() {
     const c = this._chart;
-    const title = this._config.title ?? (c?.kwh ? "Verbrauch" : "Kosten");
-    const seg = (key, opts) =>
-      `<div class="seg">${opts
-        .map(([v, label]) => `<button data-${key}="${v}" class="${(key === "mode" ? this._chartMode : this._chartRange) === v ? "on" : ""}">${label}</button>`)
-        .join("")}</div>`;
-    const head = `<div class="head"><div class="title">${esc(title)}</div><div class="controls">${seg("mode", [
+    const kwhMode = this._chartMode === "kwh";
+    const title = this._config.title ?? (kwhMode ? "Verbrauch" : "Kosten");
+    const modeSeg = `<div class="seg">${[
       ["kwh", "kWh"],
       ["eur", "€"],
-    ])}${seg("range", [
-      ["monate", "12 Monate"],
-      ["jahre", "Jahre"],
-    ])}</div></div>`;
+    ]
+      .map(([v, label]) => `<button data-mode="${v}" class="${this._chartMode === v ? "on" : ""}">${label}</button>`)
+      .join("")}</div>`;
+    const head = `<div class="head"><div class="title">${esc(title)}</div>${modeSeg}</div>${this._renderPeriodBar()}`;
     if (!c) return head + `<div class="empty">Lädt …</div>`;
 
     const dark = !!this._hass?.themes?.darkMode;
@@ -307,13 +494,20 @@ class StromTarifeCard extends HTMLElement {
     // Mehr als 8 Geräte: Rest in „Weitere Geräte“ zusammenfassen (keine erfundenen Farben)
     let names = [...c.series];
     let buckets = c.buckets.map((b) => ({ ...b, values: [...b.values] }));
+    let totals = [...c.totals];
     if (names.length > 8) {
+      const fold = (arr) => [...arr.slice(0, 7), arr.slice(7).reduce((a, v) => a + v, 0)];
       names = [...names.slice(0, 7), "Weitere Geräte"];
-      buckets = buckets.map((b) => ({ ...b, values: [...b.values.slice(0, 7), b.values.slice(7).reduce((a, v) => a + v, 0)] }));
+      buckets = buckets.map((b) => ({ ...b, values: fold(b.values) }));
+      totals = fold(totals);
     }
     const colors = names.map((_, i) => palette[i]);
-    // Ausgeblendete Reihen zählen nicht mit – Farben bleiben am Gerät, damit nichts umgefärbt wird
+    // Ausgeblendete Reihen zählen nicht mit – Farben bleiben am Gerät, Anteile beziehen sich auf das Angezeigte
     const hidden = this._hidden;
+    const series = [
+      ...names.map((n, i) => ({ key: n, name: n, color: colors[i], total: totals[i], idx: i })),
+      { key: UNTRACKED, name: "Nicht erfasst", color: grey, total: c.untrackedTotal, idx: -1, unknown: !c.untrackedKnown },
+    ].map((s) => ({ ...s, on: !hidden.has(s.key) }));
     const showDev = names.map((n) => !hidden.has(n));
     const showUn = !hidden.has(UNTRACKED);
     buckets = buckets.map((b) => ({
@@ -321,27 +515,33 @@ class StromTarifeCard extends HTMLElement {
       values: b.values.map((v, k) => (showDev[k] ? v : 0)),
       untracked: showUn ? b.untracked : 0,
     }));
-    const fmt = (v) => (c.kwh ? `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: v < 10 ? 1 : 0 }).format(v)} kWh` : eur.format(v));
-    const label = (d) =>
-      c.monthly ? d.toLocaleString("de-DE", { month: "short" }).replace(".", "") + (d.getMonth() === 0 ? ` ${String(d.getFullYear()).slice(2)}` : "") : String(d.getFullYear());
+    const visibleTotal = series.filter((s) => s.on).reduce((a, s) => a + s.total, 0);
+    const anyHidden = series.some((s) => !s.on);
 
-    // Zeichenfläche in echter Pixelbreite, damit die Schrift auch auf dem Handy lesbar bleibt
+    const fmt = (v) =>
+      c.kwh ? `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: v < 10 ? 2 : v < 100 ? 1 : 0 }).format(v)} kWh` : eur.format(v);
+    const pct = (v, of) => (of > 0 ? `${pct1.format((v / of) * 100)} %` : "–");
+
+    // ---------------- Balken
     const W = Math.max(300, Math.round((this.getBoundingClientRect().width || 832) - 32));
-    const H = W < 500 ? 220 : 280, L = 56, R = 4, T = 10, B = 26;
-    const max = Math.max(1, ...buckets.map((b) => b.values.reduce((a, v) => a + v, 0) + b.untracked));
+    const H = W < 500 ? 200 : 260, L = 56, R = 4, T = 10, B = 26;
+    const max = Math.max(...buckets.map((b) => b.values.reduce((a, v) => a + v, 0) + b.untracked), 0);
+    const niceTop = max > 0 ? max : c.kwh ? 1 : 1;
     const step = (() => {
-      const raw = max / 4;
-      const p = 10 ** Math.floor(Math.log10(raw));
-      return [1, 2, 2.5, 5, 10].map((m) => m * p).find((v) => v >= raw);
+      const raw = niceTop / 4;
+      const p10 = 10 ** Math.floor(Math.log10(raw));
+      return [1, 2, 2.5, 5, 10].map((m) => m * p10).find((v) => v >= raw);
     })();
-    const top = Math.ceil(max / step) * step;
+    const top = Math.ceil(niceTop / step) * step;
     const y = (v) => T + (H - T - B) * (1 - v / top);
     const band = (W - L - R) / buckets.length;
-    const bw = Math.min(46, band * 0.62);
+    const bw = Math.max(2, Math.min(24, band * 0.7));
+    const every = Math.max(1, Math.ceil(buckets.length / Math.max(1, Math.floor((W - L - R) / (c.g === "month" ? 34 : 30)))));
+    const axisNum = (v) => (c.kwh ? new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(v) : eur.format(v).replace(",00", ""));
     let svg = "";
     for (let v = 0; v <= top + 1e-9; v += step) {
       svg += `<line class="gridline" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`;
-      svg += `<text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${c.kwh ? new Intl.NumberFormat("de-DE").format(v) : eur.format(v).replace(",00", "")}</text>`;
+      svg += `<text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${axisNum(v)}</text>`;
     }
     const roundedTop = (x, yTop, w, h, r) => {
       r = Math.min(r, h, w / 2);
@@ -349,43 +549,80 @@ class StromTarifeCard extends HTMLElement {
     };
     buckets.forEach((b, i) => {
       const x = L + band * i + (band - bw) / 2;
-      const parts = [...b.values.map((v, k) => [v, colors[k]]), [b.untracked, grey]].filter(([v]) => v > 0);
+      const parts = [...b.values.map((v, k) => [v, colors[k], names[k]]), [b.untracked, grey, UNTRACKED]].filter(([v]) => v > 0);
       let acc = 0;
-      parts.forEach(([v, color], k) => {
+      parts.forEach(([v, color, key], k) => {
         const y0 = y(acc), y1 = y(acc + v);
         acc += v;
         const gap = k > 0 ? 2 : 0;
         const h = Math.max(0, y0 - y1 - gap);
         if (h <= 0) return;
-        svg += k === parts.length - 1
-          ? `<path d="${roundedTop(x, y1, bw, h, 4)}" fill="${color}"/>`
-          : `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"/>`;
+        svg +=
+          k === parts.length - 1
+            ? `<path data-k="${esc(key)}" d="${roundedTop(x, y1, bw, h, 4)}" fill="${color}"/>`
+            : `<rect data-k="${esc(key)}" x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"/>`;
       });
-      if (band >= 34 || (buckets.length - 1 - i) % 2 === 0)
-        svg += `<text class="axis" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${esc(label(b.start))}</text>`;
+      if (i % every === 0) svg += `<text class="axis" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${esc(bucketLabel(b.start, c.g, c.period))}</text>`;
       svg += `<rect class="hit" data-i="${i}" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>`;
     });
-    const legendItems = [...names.map((n, i) => [n, n, colors[i]]), [UNTRACKED, "Nicht erfasst", grey]];
-    const anyHidden = legendItems.some(([key]) => hidden.has(key));
-    const legend =
-      legendItems
-        .map(([key, n, col]) => {
-          const off = hidden.has(key);
-          return `<button class="lg${off ? " off" : ""}" data-series="${esc(key)}" aria-pressed="${!off}" title="${off ? "Einblenden" : "Ausblenden"}"><span class="sw" style="background:${col}"></span>${esc(n)}</button>`;
-        })
-        .join("") + (anyHidden ? `<button class="all" data-series-all>Alle anzeigen</button>` : "");
-    this._chartView = { buckets, names, colors, grey, fmt, label, anyHidden };
+    const bars = `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} ${esc(periodLabel(c.period))}">${svg}</svg><div class="tip" hidden></div></div>`;
+
+    // ---------------- Kreis (Donut) + Tabelle mit Anteilen
+    const S = W < 500 ? 150 : 176, rO = S / 2, rI = rO * 0.62, cx = S / 2, cy = S / 2;
+    const slices = series.filter((s) => s.on && s.total > 0);
+    const pt = (r, a) => `${(cx + r * Math.sin(a)).toFixed(2)},${(cy - r * Math.cos(a)).toFixed(2)}`;
+    let pie = "";
+    if (visibleTotal > 0) {
+      let a0 = 0;
+      for (const s of slices) {
+        const a1 = a0 + (s.total / visibleTotal) * 2 * Math.PI;
+        const tip = `${s.name}: ${fmt(s.total)} (${pct(s.total, visibleTotal)})`;
+        if (slices.length === 1) {
+          pie += `<circle data-k="${esc(s.key)}" cx="${cx}" cy="${cy}" r="${(rO + rI) / 2}" fill="none" stroke="${s.color}" stroke-width="${rO - rI}"><title>${esc(tip)}</title></circle>`;
+        } else {
+          const large = a1 - a0 > Math.PI ? 1 : 0;
+          pie += `<path data-k="${esc(s.key)}" class="slice" fill="${s.color}" d="M${pt(rO, a0)}A${rO},${rO} 0 ${large} 1 ${pt(rO, a1)}L${pt(rI, a1)}A${rI},${rI} 0 ${large} 0 ${pt(rI, a0)}Z"><title>${esc(tip)}</title></path>`;
+        }
+        a0 = a1;
+      }
+      pie += `<text class="ptot" x="${cx}" y="${cy + 2}" text-anchor="middle">${esc(fmt(visibleTotal))}</text>`;
+      pie += `<text class="psub" x="${cx}" y="${cy + 18}" text-anchor="middle">${anyHidden ? "angezeigt" : "gesamt"}</text>`;
+    } else {
+      pie = `<circle cx="${cx}" cy="${cy}" r="${(rO + rI) / 2}" fill="none" stroke="var(--divider-color)" stroke-width="${rO - rI}"/><text class="psub" x="${cx}" y="${cy + 4}" text-anchor="middle">keine Daten</text>`;
+    }
+    const rows = series
+      .map(
+        (s) => `<tr class="srow${s.on ? "" : " off"}" data-series="${esc(s.key)}" data-k="${esc(s.key)}">
+          <td><button class="lg" aria-pressed="${s.on}" title="${s.on ? "Ausblenden" : "Einblenden"}"><span class="sw" style="background:${s.color}"></span>${esc(s.name)}</button></td>
+          <td class="num">${s.unknown ? '<span class="sub">keine Zählerwerte</span>' : fmt(s.total)}</td>
+          <td class="num pct">${s.on && !s.unknown ? pct(s.total, visibleTotal) : "–"}</td>
+        </tr>`
+      )
+      .join("");
+    const table = `<table class="share">
+        <thead><tr><th>${anyHidden ? `<button class="all" data-series-all>Alle anzeigen</button>` : ""}</th><th class="num">${c.kwh ? "Verbrauch" : "Kosten"}</th><th class="num">Anteil</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td>${anyHidden ? "Summe (angezeigt)" : "Summe"}</td><td class="num">${fmt(visibleTotal)}</td><td class="num pct">${visibleTotal > 0 ? "100 %" : "–"}</td></tr></tfoot>
+      </table>`;
+    const split = `<div class="split"><svg class="pie" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}" role="img" aria-label="Aufteilung ${esc(periodLabel(c.period))}">${pie}</svg><div class="scroll">${table}</div></div>`;
+
+    // ---------------- Hinweise
     const last = this._data.ablesungen[0];
-    const hint = last
-      ? `<div class="status">„Nicht erfasst“ = Zähler minus Geräte. Den Zählerverbrauch gibt es bis zur letzten Ablesung (${fmtTime(last.zeitpunkt)}); danach zeigt das Diagramm nur die Geräte.${c.kwh ? "" : " Kosten ohne Grundpreis."}</div>`
-      : "";
-    return `${head}<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} je ${c.monthly ? "Monat" : "Jahr"}">${svg}</svg><div class="tip" hidden></div></div><div class="legend">${legend}</div>${hint}`;
+    const notes = ["Anteile beziehen sich auf die angezeigten Reihen im gewählten Zeitraum. „Nicht erfasst“ = Zähler minus Geräte."];
+    if (last && c.period.end > readingDate(last.zeitpunkt))
+      notes.push(`Zählerwerte gibt es bis zur letzten Ablesung (${fmtTime(last.zeitpunkt)}); danach fehlt „Nicht erfasst“.`);
+    if (c.g === "hour") notes.push("Der Zähler liefert Tageswerte: „Nicht erfasst“ steht in der Aufteilung, aber nicht in den Stundenbalken.");
+    if (!c.kwh) notes.push("Kosten ohne Grundpreis.");
+
+    this._chartView = { buckets, names, colors, grey, fmt, pct, anyHidden, g: c.g };
+    return `${head}${bars}${split}<div class="status">${notes.join(" ")}</div>`;
   }
 
   _bindChart() {
     const root = this.shadowRoot;
     root.querySelectorAll("[data-mode]").forEach((b) =>
       b.addEventListener("click", async () => {
+        if (this.__chartMode === b.dataset.mode) return;
         this.__chartMode = b.dataset.mode;
         this._chart = null;
         this._render();
@@ -393,45 +630,83 @@ class StromTarifeCard extends HTMLElement {
         this._render();
       })
     );
-    root.querySelectorAll("[data-range]").forEach((b) =>
-      b.addEventListener("click", async () => {
-        this.__chartRange = b.dataset.range;
-        this._chart = null;
-        this._render();
-        await this._loadChart();
-        this._render();
+    root.querySelectorAll("[data-kind]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const p = this._period;
+        // Bezugstag behalten (z. B. vom gewählten Monat in dessen Jahr wechseln), außer der Zeitraum enthält heute
+        const now = new Date();
+        const ref = p.start <= now && now < p.end ? now : p.start;
+        this._setPeriod(periodFor(b.dataset.kind, ref, this._firstYear()));
       })
     );
+    root.querySelectorAll("[data-shift]").forEach((b) => b.addEventListener("click", () => this._shiftPeriod(Number(b.dataset.shift))));
+    root.querySelector("#p-today")?.addEventListener("click", () => {
+      const art = this._period.art === "eigener" ? "monat" : this._period.art;
+      this._setPeriod(periodFor(art, new Date(), this._firstYear()));
+    });
+    root.querySelector("#p-open")?.addEventListener("click", () => {
+      this.__picker = !this.__picker;
+      this.__pickerError = null;
+      this._render();
+    });
+    root.querySelector("#p-apply")?.addEventListener("click", () => {
+      const von = root.querySelector("#p-von").value;
+      const bis = root.querySelector("#p-bis").value;
+      const parse = (s) => {
+        const [yy, mm, dd] = s.split("-").map(Number);
+        return new Date(yy, mm - 1, dd);
+      };
+      if (!von || !bis) {
+        this.__pickerError = "Bitte beide Daten angeben.";
+        return this._render();
+      }
+      const start = parse(von), end = addDays(parse(bis), 1);
+      if (end <= start) {
+        this.__pickerError = "„Bis“ liegt vor „Von“.";
+        return this._render();
+      }
+      this.__pickerError = null;
+      this._setPeriod({ art: "eigener", start, end });
+    });
     root.querySelectorAll("[data-series]").forEach((b) => b.addEventListener("click", () => this._toggleSeries(b.dataset.series)));
-    root.querySelector("[data-series-all]")?.addEventListener("click", () => {
+    root.querySelector("[data-series-all]")?.addEventListener("click", (e) => {
+      e.stopPropagation();
       this.__hidden = new Set();
       try {
         localStorage.removeItem(HIDDEN_KEY);
-      } catch (e) {}
+      } catch (e2) {}
       this._render();
     });
+    // Hervorheben: Kreissegment <-> Tabellenzeile
+    const highlight = (key) =>
+      root.querySelectorAll(".split [data-k]").forEach((el) => el.classList.toggle("dim", key !== null && el.dataset.k !== key));
+    root.querySelectorAll(".split [data-k]").forEach((el) => {
+      el.addEventListener("mouseenter", () => highlight(el.dataset.k));
+      el.addEventListener("mouseleave", () => highlight(null));
+    });
+
     const tip = root.querySelector(".tip");
     const chart = root.querySelector(".chart");
-    if (!tip || !this._chartView) return;
+    if (!tip || !this._chartView || !this._chart) return;
     const v = this._chartView;
     root.querySelectorAll(".hit").forEach((el) => {
       el.addEventListener("mouseenter", () => {
         const b = v.buckets[+el.dataset.i];
+        const sum = b.values.reduce((a, x) => a + x, 0) + b.untracked;
         const rows = [...b.values.map((val, k) => [v.names[k], val, v.colors[k]]), ["Nicht erfasst", b.untracked, v.grey]]
           .filter(([, val]) => val > 0)
           .reverse()
-          .map(([n, val, col]) => `<div class="r"><span><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${col}"></span>${esc(n)}</span><span>${v.fmt(val)}</span></div>`)
+          .map(
+            ([n, val, col]) =>
+              `<div class="r"><span><span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:${col}"></span>${esc(n)}</span><span>${v.fmt(val)} <span class="sub">${v.pct(val, sum)}</span></span></div>`
+          )
           .join("");
-        const sum = b.values.reduce((a, x) => a + x, 0) + b.untracked;
-        const period = this._chart.monthly
-          ? b.start.toLocaleString("de-DE", { month: "long", year: "numeric" })
-          : String(b.start.getFullYear());
-        tip.innerHTML = `<div class="t">${esc(period)}</div>${rows || '<div class="sub">keine Daten</div>'}<div class="r tot"><span>${v.anyHidden ? "Summe (angezeigt)" : "Gesamt"}</span><span>${v.fmt(sum)}</span></div>`;
+        tip.innerHTML = `<div class="t">${esc(bucketTitle(b.start, v.g))}</div>${rows || '<div class="sub">keine Daten</div>'}<div class="r tot"><span>${v.anyHidden ? "Summe (angezeigt)" : "Summe"}</span><span>${v.fmt(sum)}</span></div>`;
         tip.hidden = false;
         const box = chart.getBoundingClientRect();
         const r = el.getBoundingClientRect();
         let left = r.left - box.left + r.width / 2 + 12;
-        if (left + 190 > box.width) left = r.left - box.left + r.width / 2 - 202;
+        if (left + 230 > box.width) left = r.left - box.left + r.width / 2 - 242;
         tip.style.left = `${Math.max(0, left)}px`;
         tip.style.top = `8px`;
       });
