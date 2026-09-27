@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- Lokale Vorschau der Karte ohne Home Assistant.
+     Aufruf: mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&breite=820
+     Alle Daten sind synthetisch. -->
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stromtarife – Mock</title>
+<style>
+body{margin:0;padding:16px;background:var(--bg);font-family:system-ui,sans-serif;--primary-color:#03a9f4;--text-primary-color:#fff;}
+body.dark{--bg:#111;--card-background-color:#1c1c1c;--primary-text-color:#e1e1e1;--secondary-text-color:#9b9b9b;--divider-color:#333;--secondary-background-color:#282828;color:#e1e1e1}
+body.light{--bg:#fafafa;--card-background-color:#fff;--primary-text-color:#212121;--secondary-text-color:#727272;--divider-color:#e0e0e0;--secondary-background-color:#f5f5f5}
+</style>
+<script>
+// Minimal-Ersatz für HA-Komponenten
+customElements.define('ha-card',class extends HTMLElement{connectedCallback(){Object.assign(this.style,{display:'block',background:'var(--card-background-color)',borderRadius:'12px',border:'1px solid var(--divider-color)'})}});
+customElements.define('ha-icon',class extends HTMLElement{connectedCallback(){const i=this.getAttribute('icon')||'';this.textContent=i.includes('left')?'‹':i.includes('right')?'›':i.includes('calendar')?'📅':i.includes('pencil')?'✎':'•'}});
+</script>
+<script src="../custom_components/strom_tarife/frontend/strom-tarife-card.js"></script>
+</head>
+<body>
+<div id="host"></div>
+<script>
+const q = new URLSearchParams(location.search);
+const theme = q.get('theme') || 'dark';
+document.body.className = theme;
+document.getElementById('host').style.maxWidth = (q.get('breite') || '820') + 'px';
+
+const names = ['Kühlschrank','Waschmaschine','Spülmaschine','3D Drucker','Fernseher','Multimedia','Netzwerk','Arbeitsplatz'];
+const reihen = [{id:'gesamt',name:'Gesamt',source:'strom_tarife:zaehler',statistic_id:'strom_tarife:kosten_gesamt'},
+  ...names.map((n,i)=>({id:'d'+i,name:n,source:'sensor.geraet_'+i,statistic_id:'strom_tarife:kosten_geraet_'+i}))];
+const today = new Date();
+// Lokale Zeit, nicht UTC (toISOString würde um die Zeitzone verschieben)
+const pad = (n)=>String(n).padStart(2,'0');
+const iso = (d)=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const isoMin = (d)=>`${iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const lastReading = new Date(today.getFullYear(), today.getMonth(), today.getDate()-3, 19, 16);
+const data = {
+  vertraege:[
+    {id:'a',anbieter:'Beispiel Energie',von:iso(new Date(today.getFullYear(),today.getMonth()+1,1)),bis:null,arbeitspreis_ct:28.5,grundpreis_eur:150,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]},
+    {id:'b',anbieter:'Muster Strom',von:iso(new Date(today.getFullYear()-1,today.getMonth(),1)),bis:iso(new Date(today.getFullYear(),today.getMonth()+1,0)),arbeitspreis_ct:24.1,grundpreis_eur:12.5,grundpreis_einheit:'monat',notiz:'Testvertrag',aktiv:true,ueberschneidet:[]}],
+  luecken:[],
+  ablesungen:[
+    {id:'x',zeitpunkt:isoMin(lastReading),stand:12345.6,notiz:'',verbrauch:420.5,tage:92,pro_tag:4.57},
+    {id:'y',zeitpunkt:(today.getFullYear()-3)+'-08-29T15:00',stand:6100,notiz:'Einzug'}],
+  reihen, berechnung:{laeuft:false,zuletzt:new Date().toISOString(),fehler:null}};
+
+// Synthetische Statistik: beachtet period/start/end wie recorder/statistics_during_period
+function stats(msg){
+  const out={}; const st=new Date(msg.start_time||Date.now()-864e5*400), en=new Date(msg.end_time||Date.now());
+  const step=(d)=>msg.period==='hour'?new Date(d.getTime()+36e5):msg.period==='day'?new Date(d.getFullYear(),d.getMonth(),d.getDate()+1):msg.period==='month'?new Date(d.getFullYear(),d.getMonth()+1,1):new Date(d.getFullYear()+1,0,1);
+  let d=msg.period==='hour'||msg.period==='day'?new Date(st):msg.period==='month'?new Date(st.getFullYear(),st.getMonth(),1):new Date(st.getFullYear(),0,1);
+  const starts=[]; while(d<en){starts.push(d);d=step(d);}
+  const rates=[0.55,0.2,0.15,0.08,0.12,0.1,0.25,0.4];
+  for (const id of msg.statistic_ids){
+    const f=id.includes('kosten')?0.24:1; const isTot=id.endsWith('zaehler')||id.endsWith('gesamt'); const k=isTot?-1:Number(id.slice(-1));
+    out[id]=starts.map((s,j)=>{const e=step(s);const a=Math.max(s,st),b=Math.min(e,en,isTot?lastReading:new Date());if(b<=a)return null;
+      const days=(b-a)/864e5;const wob=1+0.3*Math.sin(j*1.7+k);
+      const v=isTot?4.5*days*wob:rates[k]*days*wob;return {start:s.getTime(),change:v*f};}).filter(Boolean);
+  }
+  return out;
+}
+function statPeriod(msg){ // recorder/statistic_during_period (Kostenübersicht)
+  return {change: msg.statistic_id.includes('gesamt') ? 25.5 : 3.1};
+}
+const hass={user:{is_admin:true},themes:{darkMode:theme==='dark'},
+  callWS:async(m)=>{
+    if(m.type==='strom_tarife/data') return data;
+    if(m.type==='recorder/statistics_during_period') return stats(m);
+    if(m.type==='recorder/statistic_during_period') return statPeriod(m);
+    console.warn('Mock: unbekannter WS-Befehl', m); return data;
+  }};
+const card=document.createElement('strom-tarife-card');
+card.setConfig({ansicht:q.get('ansicht')||'diagramm', einheit:q.get('einheit')||undefined, zeitraum:q.get('zeitraum')||undefined});
+document.getElementById('host').appendChild(card); card.hass=hass;
+</script></body></html>

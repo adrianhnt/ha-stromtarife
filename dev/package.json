@@ -1,0 +1,12 @@
+{
+  "name": "strom-tarife-dev",
+  "private": true,
+  "type": "module",
+  "description": "Lokale Testumgebung für die Stromtarife-Karte (nicht Teil der Integration)",
+  "scripts": {
+    "screenshots": "node screenshot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}
