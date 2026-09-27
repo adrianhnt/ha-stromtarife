@@ -18,7 +18,7 @@ ansicht: vertraege   # oder: zaehler, kosten, diagramm
 - **vertraege** – Tabelle mit Hinzufügen / Bearbeiten / Löschen (nur Administratoren). Zeiträume ohne Vertrag werden angezeigt (sie kosten 0 €). Überschneiden sich Verträge, gilt der mit dem späteren Beginn.
 - **zaehler** – Ablesungen mit Verbrauch seit der vorherigen und Ø pro Tag, Hinzufügen / Bearbeiten / Löschen.
 - **kosten** – Kosten je Reihe für diesen Monat, dieses Jahr und das Vorjahr, auf Cent gerundet.
-- **diagramm** – gestapelte Balken je Monat (12 Monate) oder Jahr, umschaltbar kWh / €, mit „Nicht erfasst“ (Zähler minus Geräte) wie im Energie-Dashboard. Ein Klick auf einen Eintrag der Legende blendet das Gerät bzw. „Nicht erfasst“ aus oder ein; die Auswahl merkt sich der Browser. Optional `einheit: kwh|eur`, `zeitraum: monate|jahre` als Startwerte.
+- **diagramm** – Zeitraum wie im Energie-Dashboard wählbar (Tag / Woche / Monat / Jahr / Gesamt, vor- und zurückblättern, „Heute“, oder frei über den Kalender). Gestapelte Balken (Stunden, Tage, Monate oder Jahre – je nach Zeitraum) plus Ringdiagramm mit Tabelle: je Gerät und „Nicht erfasst“ (Zähler minus Geräte) Verbrauch bzw. Kosten und Anteil in %. Die Anteile beziehen sich immer auf das, was gerade angezeigt wird. Ein Klick auf eine Zeile blendet sie aus oder ein; die Auswahl merkt sich der Browser. Optional `einheit: kwh|eur` und `zeitraum: tag|woche|monat|jahr|gesamt` als Startwerte.
 
 ## Berechnung
 
