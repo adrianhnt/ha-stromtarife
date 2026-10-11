@@ -82,8 +82,15 @@ Die Option `ansicht` bestimmt, was die Karte zeigt:
 |---|---|
 | `vertraege` | Tabelle mit Dialog (Grundpreis wahlweise pro Jahr oder pro Monat) |
 | `zaehler` | Ablesungen mit Verbrauch und Ø pro Tag |
+| `ablesung` | Formular für eine neue Ablesung direkt in der Karte, für eine eigene Ansicht als Lesezeichen (#22) |
 | `kosten` | Monat, Jahr und Vorjahr je Reihe |
 | `diagramm` | siehe unten |
+
+**`ablesung`**
+- Formular statt Modal: Zählerstand (Fokus beim Anzeigen), Zeitpunkt, Notiz, Speichern per Enter. Darüber die letzte Ablesung, danach eine Bestätigung mit Verbrauch seit davor.
+- Der Zeitpunkt läuft mit (`zeitManuell`), gespeichert wird `localNow()` beim Speichern. HA hält die Karte beim Ansichtswechsel vor: `connectedCallback` setzt ein leeres Formular zurück, `visibilitychange` zeichnet neu (App aus dem Hintergrund).
+- `_render` stellt Fokus und Cursor wieder her, weil die Karte alle 5 Minuten und nach Neuberechnungen neu zeichnet.
+- Nur für Admins, sonst ein Hinweis. Companion App: `homeassistant://navigate/<dashboard>/<ansicht>`.
 
 **`diagramm`**
 - Zeitraumwahl wie im Energie-Dashboard: Tag, Woche, Monat, Jahr, Gesamt, ‹ ›, „Heute“, Kalender mit Von/Bis.
@@ -114,7 +121,7 @@ Weitere Regeln für die Karte:
 ## Lokal testen
 
 - Python: `python3 dev/test_tarife_stub.py` (HA-Module sind gestubbt, braucht Python ≥ 3.12, sonst nichts). Muss mit `OK` enden.
-- Karte: `dev/mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&grundpreis=0`, direkt im Browser öffnen. Mock-hass mit synthetischen Statistiken.
+- Karte: `dev/mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|ablesung|kosten&grundpreis=0&admin=0`, direkt im Browser öffnen. Mock-hass mit synthetischen Statistiken.
 - Screenshots: `cd dev && npm install && node screenshot.mjs` (in der Cloud-Umgebung mit `PW_CHROMIUM=/opt/pw-browsers/chromium`). Das Ergebnis landet in `dev/out/`. Screenshots immer ansehen, bevor eine UI-Änderung fertig ist: dunkel, hell und schmal (390 px).
 - `node --check custom_components/strom_tarife/frontend/strom-tarife-card.js` vor jedem Commit.
 

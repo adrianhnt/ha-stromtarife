@@ -27,11 +27,17 @@ const shots = [
   ['vertraege', { theme: 'dark', ansicht: 'vertraege' }, 900],
   ['zaehler', { theme: 'light', ansicht: 'zaehler' }, 900],
   ['kosten', { theme: 'dark', ansicht: 'kosten' }, 900],
+  ['ablesung-dunkel', { theme: 'dark', ansicht: 'ablesung' }, 900],
+  ['ablesung-hell', { theme: 'light', ansicht: 'ablesung' }, 900],
+  ['ablesung-schmal', { theme: 'dark', ansicht: 'ablesung', breite: '358' }, 390],
+  ['ablesung-gespeichert', { theme: 'light', ansicht: 'ablesung', breite: '358' }, 390, 0, '12500,4'],
+  ['ablesung-fehler', { theme: 'dark', ansicht: 'ablesung', breite: '358' }, 390, 0, '100'],
+  ['ablesung-kein-admin', { theme: 'dark', ansicht: 'ablesung', breite: '358', admin: '0' }, 390],
 ];
 
 const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
 let errors = 0;
-for (const [name, q, width, zurueck = 0] of shots) {
+for (const [name, q, width, zurueck = 0, stand] of shots) {
   const page = await browser.newPage({ viewport: { width, height: 1200 } });
   page.on('pageerror', (e) => { errors++; console.error(`[${name}] Fehler:`, e.message); });
   page.on('console', (m) => m.type() === 'error' && (errors++, console.error(`[${name}] Konsole:`, m.text())));
@@ -40,6 +46,11 @@ for (const [name, q, width, zurueck = 0] of shots) {
   for (let i = 0; i < zurueck; i++) {
     await page.locator('strom-tarife-card [data-shift="-1"]').click();
     await page.waitForTimeout(300);
+  }
+  if (stand !== undefined) { // Ansicht ablesung: Stand eintippen und mit Enter speichern
+    await page.locator('strom-tarife-card #e-stand').fill(stand);
+    await page.locator('strom-tarife-card #e-stand').press('Enter');
+    await page.waitForTimeout(500);
   }
   await page.locator('strom-tarife-card').screenshot({ path: path.join(out, `${name}.png`) });
   await page.close();

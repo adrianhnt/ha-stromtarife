@@ -1,6 +1,6 @@
 // Stromtarife – Dashboard-Karte (Verträge als Tabelle / Kostenübersicht)
 // type: custom:strom-tarife-card
-// ansicht: vertraege | zaehler | kosten | diagramm (einheit: kwh|eur, zeitraum: tag|woche|monat|jahr|gesamt, grundpreis: true|false)
+// ansicht: vertraege | zaehler | ablesung | kosten | diagramm (einheit: kwh|eur, zeitraum: tag|woche|monat|jahr|gesamt, grundpreis: true|false)
 
 const DOMAIN = "strom_tarife";
 const EVENT = "strom-tarife-updated";
@@ -39,6 +39,8 @@ const gpText = (v) => {
   const other = yearly ? `≈ ${eur.format(v.grundpreis_eur / 12)}/Monat` : `≈ ${eur.format(v.grundpreis_eur * 12)}/Jahr`;
   return `${main}<div class="sub">${other}</div>`;
 };
+// Formular der Ansicht `ablesung`: Zeitpunkt läuft mit, bis man ihn selbst ändert
+const newEntry = () => ({ zeitpunkt: localNow(), zeitManuell: false, stand: "", notiz: "", error: null, busy: false, saved: null });
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -277,6 +279,11 @@ const STYLE = `
   table.share .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
   table.share tfoot td { font-weight: 500; border-bottom: none; }
   table.share .pct { color: var(--secondary-text-color); }
+  .entry #e-stand { font-size: 1.4em; padding: 10px 12px; font-variant-numeric: tabular-nums; }
+  .entry .actions { margin-top: 14px; }
+  .entry .actions button { padding: 10px 20px; }
+  .entry .last { margin-top: 0; }
+  .done { margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(67,160,71,0.15); font-size: 0.9em; }
   .all { background: transparent; color: var(--primary-color); padding: 0; font-size: 0.95em; font-weight: 400; }
 `;
 class StromTarifeCard extends HTMLElement {
@@ -285,6 +292,7 @@ class StromTarifeCard extends HTMLElement {
     this._data = null;
     this._costs = null;
     this._dialog = null;
+    this._entry = newEntry();
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
@@ -310,6 +318,14 @@ class StromTarifeCard extends HTMLElement {
     this._onUpdated = () => this._load();
     window.addEventListener(EVENT, this._onUpdated);
     this._timer = setInterval(() => this._load(), 5 * 60 * 1000);
+    if (this._config.ansicht === "ablesung") {
+      // HA hält die Karte beim Wechsel der Ansicht vor: bei jedem Anzeigen frisch starten, Eingaben aber behalten
+      if (!this._entry.stand.trim()) this._entry = newEntry();
+      else this._entry.saved = null;
+      this._focusEntry = true;
+      this._onVisible = () => document.visibilityState === "visible" && this._render();
+      document.addEventListener("visibilitychange", this._onVisible);
+    }
     this._observeSize();
     if (this._hass) this._load();
   }
@@ -331,6 +347,7 @@ class StromTarifeCard extends HTMLElement {
     this._ro?.disconnect();
     this._ro = null;
     window.removeEventListener(EVENT, this._onUpdated);
+    if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
     clearInterval(this._timer);
     clearTimeout(this._poll);
   }
@@ -841,10 +858,26 @@ class StromTarifeCard extends HTMLElement {
     else if (!this._data) body = `<div class="empty">Lädt …</div>`;
     else if (this._config.ansicht === "kosten") body = this._renderCosts();
     else if (this._config.ansicht === "zaehler") body = this._renderReadings();
+    else if (this._config.ansicht === "ablesung") body = this._renderEntry();
     else if (this._config.ansicht === "diagramm") body = this._renderChart();
     else body = this._renderContracts();
+    // Fokus und Cursor überstehen das Neuzeichnen (Aktualisierung alle 5 Minuten, Neuberechnung)
+    const active = root.activeElement;
+    const focus = active?.id ? { id: active.id, sel: [active.selectionStart, active.selectionEnd] } : null;
     root.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>${this._renderDialog()}`;
     this._bind();
+    const el = focus && root.getElementById(focus.id);
+    if (el) {
+      el.focus({ preventScroll: true });
+      try {
+        if (focus.sel[0] !== null) el.setSelectionRange(...focus.sel);
+      } catch (e) {}
+    }
+    const stand = this._focusEntry && root.getElementById("e-stand");
+    if (stand) {
+      this._focusEntry = false;
+      stand.focus({ preventScroll: true });
+    }
   }
 
   _status() {
@@ -922,6 +955,80 @@ class StromTarifeCard extends HTMLElement {
     return `<div class="head"><div class="title">${esc(title)}</div>${add}</div>${table}
       <div class="status">Zwischen zwei Ablesungen wird der Verbrauch gleichmäßig verteilt. Nach der letzten Ablesung erscheint noch nichts – erst mit der nächsten.</div>
       ${this._status()}`;
+  }
+
+  _renderEntry() {
+    const title = this._config.title ?? "Zählerstand eintragen";
+    const last = this._data.ablesungen[0];
+    const lastLine = last
+      ? `<div class="status last">Letzte Ablesung: ${fmtTime(last.zeitpunkt)} · ${num1.format(last.stand)} kWh</div>`
+      : `<div class="status last">Noch keine Ablesung eingetragen.</div>`;
+    const head = `<div class="head"><div class="title">${esc(title)}</div></div>${lastLine}`;
+    if (!this._isAdmin) return `${head}<div class="hint">Ablesungen eintragen dürfen nur Administratoren.</div>`;
+    const e = this._entry;
+    if (!e.zeitManuell) e.zeitpunkt = localNow();
+    let done = "";
+    if (e.saved) {
+      const s = e.saved;
+      const extra =
+        s.verbrauch === undefined
+          ? ""
+          : ` · ${s.verbrauch >= 0 ? "+" : ""}${num1.format(s.verbrauch)} kWh seit davor${s.pro_tag === undefined || s.pro_tag === null ? "" : ` (Ø ${num2.format(s.pro_tag)} kWh/Tag)`}`;
+      done = `<div class="done">Gespeichert: ${num1.format(s.stand)} kWh am ${fmtTime(s.zeitpunkt)}${extra}</div>`;
+    }
+    return `${head}<form class="entry" id="entry" novalidate>
+      <label for="e-stand">Zählerstand <span class="unit">kWh</span></label>
+      <input id="e-stand" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${esc(e.stand)}" placeholder="z. B. 25362,0">
+      <label for="e-zeit">Abgelesen am</label><input id="e-zeit" type="datetime-local" value="${esc(e.zeitpunkt)}">
+      <label for="e-notiz">Notiz <span class="unit">(optional)</span></label><input id="e-notiz" autocomplete="off" value="${esc(e.notiz)}">
+      ${e.error ? `<div class="err">${esc(e.error)}</div>` : ""}
+      <div class="actions"><button class="primary" type="submit"${e.busy ? " disabled" : ""}>${e.busy ? "Speichert …" : "Speichern"}</button></div>
+    </form>${done}`;
+  }
+
+  _bindEntry() {
+    const $ = (sel) => this.shadowRoot.querySelector(sel);
+    const form = $("#entry");
+    if (!form) return;
+    $("#e-stand").addEventListener("input", (ev) => (this._entry.stand = ev.target.value));
+    $("#e-notiz").addEventListener("input", (ev) => (this._entry.notiz = ev.target.value));
+    $("#e-zeit").addEventListener("input", (ev) => {
+      this._entry.zeitpunkt = ev.target.value;
+      this._entry.zeitManuell = true;
+    });
+    form.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      this._saveEntry();
+    });
+  }
+
+  async _saveEntry() {
+    const e = this._entry;
+    if (e.busy) return;
+    // ohne eigene Änderung gilt der Zeitpunkt des Speicherns, auch wenn die Seite lange offen war
+    const ablesung = { zeitpunkt: e.zeitManuell ? e.zeitpunkt : localNow(), stand: e.stand.trim(), notiz: e.notiz.trim() };
+    if (!ablesung.stand) {
+      e.error = "Bitte den Zählerstand eintragen.";
+      e.saved = null;
+      this._focusEntry = true;
+      this._render();
+      return;
+    }
+    e.busy = true;
+    e.error = null;
+    this._render();
+    try {
+      this._data = await this._hass.callWS({ type: `${DOMAIN}/ablesung/save`, ablesung });
+      const saved = this._data.ablesungen.find((a) => a.zeitpunkt === ablesung.zeitpunkt);
+      this._entry = { ...newEntry(), saved: saved ?? { ...ablesung, stand: Number(ablesung.stand.replace(",", ".")) } };
+      this._afterChange();
+    } catch (err) {
+      e.busy = false;
+      e.error = err.message || String(err);
+      e.saved = null;
+      this._focusEntry = true;
+      this._render();
+    }
   }
 
   _renderCosts() {
@@ -1014,6 +1121,7 @@ class StromTarifeCard extends HTMLElement {
   _bind() {
     const $ = (sel) => this.shadowRoot.querySelector(sel);
     if (this._config.ansicht === "diagramm") this._bindChart();
+    if (this._config.ansicht === "ablesung") this._bindEntry();
     $("#add-reading")?.addEventListener("click", () => {
       this._dialog = { kind: "ablesung", ablesung: { zeitpunkt: localNow(), stand: "", notiz: "" } };
       this._render();
@@ -1144,6 +1252,6 @@ if (!customElements.get("strom-tarife-card")) {
   window.customCards.push({
     type: "strom-tarife-card",
     name: "Stromtarife",
-    description: "Stromverträge (ansicht: vertraege), Zählerstände (ansicht: zaehler), Kostenübersicht (ansicht: kosten) oder Diagramm mit nicht erfasstem Verbrauch (ansicht: diagramm)",
+    description: "Stromverträge (ansicht: vertraege), Zählerstände (ansicht: zaehler), Ablesung eintragen (ansicht: ablesung), Kostenübersicht (ansicht: kosten) oder Diagramm mit nicht erfasstem Verbrauch (ansicht: diagramm)",
   });
 }

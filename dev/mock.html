@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Lokale Vorschau der Karte ohne Home Assistant.
-     Aufruf: mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&breite=820&grundpreis=0
+     Aufruf: mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|ablesung|kosten&admin=0&breite=820&grundpreis=0
      Alle Daten sind synthetisch. -->
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stromtarife – Mock</title>
@@ -64,11 +64,19 @@ function stats(msg){
 function statPeriod(msg){ // recorder/statistic_during_period (Kostenübersicht)
   return {change: msg.statistic_id.includes('gesamt') ? 25.5 : 3.1};
 }
-const hass={user:{is_admin:true},themes:{darkMode:theme==='dark'},
+const hass={user:{is_admin:q.get('admin')!=='0'},themes:{darkMode:theme==='dark'},
   callWS:async(m)=>{
     if(m.type==='strom_tarife/data') return data;
     if(m.type==='recorder/statistics_during_period') return stats(m);
     if(m.type==='recorder/statistic_during_period') return statPeriod(m);
+    if(m.type==='strom_tarife/ablesung/save'){ // vereinfacht: neue Ablesung vorne einfügen
+      const stand=Number(String(m.ablesung.stand).replace(',','.')); if(!(stand>=0)) throw new Error('Zählerstand: keine Zahl');
+      const prev=data.ablesungen[0]; if(prev&&stand<prev.stand) throw new Error(`Stand ist kleiner als am ${prev.zeitpunkt} (${prev.stand} kWh)`);
+      const tage=prev?(new Date(m.ablesung.zeitpunkt)-new Date(prev.zeitpunkt))/864e5:null;
+      data.ablesungen.unshift({id:'n'+Date.now(),zeitpunkt:m.ablesung.zeitpunkt,stand,notiz:m.ablesung.notiz||'',
+        verbrauch:prev?Math.round((stand-prev.stand)*1000)/1000:undefined,tage,pro_tag:prev&&tage>0?(stand-prev.stand)/tage:null});
+      return data;
+    }
     console.warn('Mock: unbekannter WS-Befehl', m); return data;
   }};
 const card=document.createElement('strom-tarife-card');

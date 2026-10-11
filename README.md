@@ -44,7 +44,7 @@ Copy `custom_components/strom_tarife` into the `custom_components` folder of you
 
    ```yaml
    type: custom:strom-tarife-card
-   ansicht: vertraege   # contracts; or: zaehler, kosten, diagramm
+   ansicht: vertraege   # contracts; or: zaehler, ablesung, kosten, diagramm
    ```
 
 3. **Enter your contracts** in the `vertraege` view and **your meter readings** in the `zaehler` view. Only administrators can edit.
@@ -56,8 +56,18 @@ Copy `custom_components/strom_tarife` into the `custom_components` folder of you
 |---|---|
 | `vertraege` | Contracts table with add, edit and delete. Periods without a contract are listed (they cost 0 €). If contracts overlap, the one that started later applies. |
 | `zaehler` | Meter readings with consumption since the previous reading and average per day. |
+| `ablesung` | Form to enter a new meter reading directly, without a dialog. Meant for its own dashboard view that you bookmark (see below). |
 | `kosten` | Costs per series for this month, this year and last year. |
 | `diagramm` | Consumption or costs for a selectable period (day, week, month, year, all), stacked per device plus "Nicht erfasst" (meter minus devices), with a donut chart and shares in %. Click a row to hide or show it. |
+
+### Quick meter reading via bookmark
+
+Put a card with `ansicht: ablesung` on its own dashboard view, e.g. with the path `ablesen`. When the view opens, the cursor is already in the meter reading field. The time is filled in with the current time when you save, unless you change it. After saving, the card confirms the value and the consumption since the previous reading, and the form is empty again.
+
+Save the view as a bookmark, or as an icon on your phone's home screen:
+
+- Browser: `https://<your-instance>/<dashboard>/ablesen`
+- Companion app: `homeassistant://navigate/<dashboard>/ablesen` (with several servers add `?server=default`). On iOS you can put this link on the home screen with the Shortcuts app ("Open URL"), on Android with the shortcuts of the Home Assistant app.
 
 Options for `diagramm` (start values, can be changed in the card):
 

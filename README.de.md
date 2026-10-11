@@ -42,7 +42,7 @@ Home-Assistant-Integration für **Stromverträge in Deutschland**. Sie verwaltet
 
    ```yaml
    type: custom:strom-tarife-card
-   ansicht: vertraege   # oder: zaehler, kosten, diagramm
+   ansicht: vertraege   # oder: zaehler, ablesung, kosten, diagramm
    ```
 
 3. **Verträge** in der Ansicht `vertraege` und **Zählerstände** in der Ansicht `zaehler` eintragen. Bearbeiten dürfen nur Administratoren.
@@ -54,8 +54,18 @@ Home-Assistant-Integration für **Stromverträge in Deutschland**. Sie verwaltet
 |---|---|
 | `vertraege` | Vertragstabelle mit Hinzufügen, Bearbeiten und Löschen. Zeiträume ohne Vertrag werden angezeigt (sie kosten 0 €). Überschneiden sich Verträge, gilt der mit dem späteren Beginn. |
 | `zaehler` | Ablesungen mit Verbrauch seit der vorherigen und Ø pro Tag. |
+| `ablesung` | Formular, um direkt eine neue Ablesung einzutragen, ohne Dialog. Gedacht für eine eigene Dashboard-Ansicht als Lesezeichen (siehe unten). |
 | `kosten` | Kosten je Reihe für diesen Monat, dieses Jahr und das Vorjahr. |
 | `diagramm` | Verbrauch oder Kosten für einen wählbaren Zeitraum (Tag, Woche, Monat, Jahr, Gesamt), gestapelt je Gerät plus „Nicht erfasst“ (Zähler minus Geräte), mit Ringdiagramm und Anteilen in %. Ein Klick auf eine Zeile blendet sie aus oder ein. |
+
+### Schnell ablesen per Lesezeichen
+
+Eine Karte mit `ansicht: ablesung` auf eine eigene Dashboard-Ansicht legen, z. B. mit dem Pfad `ablesen`. Beim Öffnen steht der Cursor schon im Feld „Zählerstand“. Als Zeitpunkt gilt der Moment des Speicherns, solange man ihn nicht selbst ändert. Nach dem Speichern zeigt die Karte den Wert und den Verbrauch seit der vorherigen Ablesung, das Formular ist wieder leer.
+
+Die Ansicht als Lesezeichen oder als Icon auf dem Home-Bildschirm des Handys speichern:
+
+- Browser: `https://<deine-instanz>/<dashboard>/ablesen`
+- Companion App: `homeassistant://navigate/<dashboard>/ablesen` (bei mehreren Servern mit `?server=default`). Auf dem iPhone lässt sich der Link mit der Kurzbefehle-App („URL öffnen“) auf den Home-Bildschirm legen, auf Android über die Shortcuts der Home-Assistant-App.
 
 Optionen für `diagramm` (Startwerte, in der Karte umschaltbar):
 
