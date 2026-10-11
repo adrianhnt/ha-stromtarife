@@ -2,6 +2,13 @@
 
 All notable changes to this project. Versions follow `version` in `custom_components/strom_tarife/manifest.json`; each version is published as a GitHub release.
 
+## 0.7.0 (2026-10-11)
+
+- Energy price with up to three decimal places (e.g. 28.317 ct/kWh). Editing a contract no longer rounds the price to two decimals.
+- Removing the integration deletes its statistics; contracts and readings are kept for a reinstall
+- Deselecting a device in the options deletes its cost statistic
+- Contract dialog: amounts of 1,000 € or more are prefilled without a thousands separator, so they can be saved again
+
 ## 0.6.0 (2026-10-11)
 
 First public release.
