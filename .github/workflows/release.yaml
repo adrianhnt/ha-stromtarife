@@ -1,8 +1,12 @@
 name: Release
 
+# Start: Tag vX.Y.Z pushen oder manuell (Actions → Release → Run workflow).
+# Manuell wird das Tag aus der Version in manifest.json abgeleitet und mit dem
+# Release auf dem gewählten Commit angelegt.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,26 +17,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Version im Manifest prüfen
+      - name: Version bestimmen
         run: |
           manifest=$(python3 -c "import json; print(json.load(open('custom_components/strom_tarife/manifest.json'))['version'])")
-          if [ "v$manifest" != "$GITHUB_REF_NAME" ]; then
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$manifest" != "$GITHUB_REF_NAME" ]; then
             echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Manifest-Version $manifest"
             exit 1
           fi
+          echo "VERSION=$manifest" >> "$GITHUB_ENV"
+          echo "TAG=v$manifest" >> "$GITHUB_ENV"
       - name: Release-Notes aus CHANGELOG.md
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '
+          awk -v v="$VERSION" '
             $0 ~ "^## \\[?" v "\\]?([ ]|$)" { found = 1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then
-            echo "::error::Kein Abschnitt für $version in CHANGELOG.md"
+            echo "::error::Kein Abschnitt für $VERSION in CHANGELOG.md"
             exit 1
           fi
       - name: Release anlegen
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG gibt es schon"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
+          fi

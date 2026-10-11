@@ -123,7 +123,7 @@ Mindestversion: HA 2025.11 (`hacs.json`). Erst ab da hat `statistics_meta` die S
 
 1. `version` in `manifest.json` erhöhen, Abschnitt `## X.Y.Z (Datum)` in `CHANGELOG.md` (Englisch), beide READMEs anpassen.
 2. Commit und Push auf `main`, CI abwarten.
-3. Tag `vX.Y.Z` setzen und pushen. `release.yaml` prüft, ob Tag und Manifest-Version passen, und legt das GitHub-Release mit dem Changelog-Abschnitt an. HACS bietet nur noch Releases an, keine einzelnen Commits.
+3. Release anlegen: Workflow „Release“ manuell auf `main` starten (Actions → Release → Run workflow, über den GitHub-MCP `actions_run_trigger` mit `run_workflow`). Er leitet das Tag `vX.Y.Z` aus der Manifest-Version ab und legt Tag und GitHub-Release mit dem Changelog-Abschnitt an. Tags lassen sich aus der Cloud-Umgebung nicht pushen (Proxy 403); lokal geht auch `git push origin vX.Y.Z`. HACS bietet nur noch Releases an, keine einzelnen Commits.
 4. In HA per HACS aktualisieren: Repo-ID `1389007769`, erst „Update information“, dann „Download“. Über den HA-MCP geht das mit `ha_manage_hacs` und `update_information`, dann `download`.
 5. Bei Python-Änderungen braucht es einen **Neustart von HA, aber nur nach ausdrücklichem OK des Nutzers**. Bei reinen JS-Änderungen reicht ein hartes Neuladen im Browser.
 6. Danach im echten Dashboard prüfen: Konsole ohne Fehler und Werte plausibel.
