@@ -37,7 +37,7 @@ const isoMin = (d)=>`${iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const lastReading = new Date(today.getFullYear(), today.getMonth(), today.getDate()-3, 19, 16);
 const data = {
   vertraege:[
-    {id:'a',anbieter:'Beispiel Energie',von:iso(new Date(today.getFullYear(),today.getMonth()+1,1)),bis:null,arbeitspreis_ct:28.5,grundpreis_eur:150,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]},
+    {id:'a',anbieter:'Beispiel Energie',von:iso(new Date(today.getFullYear(),today.getMonth()+1,1)),bis:null,arbeitspreis_ct:28.317,grundpreis_eur:150,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]},
     {id:'b',anbieter:'Muster Strom',von:iso(new Date(today.getFullYear(),today.getMonth()-4,15)),bis:iso(new Date(today.getFullYear(),today.getMonth()+1,0)),arbeitspreis_ct:24.1,grundpreis_eur:12.5,grundpreis_einheit:'monat',notiz:'Testvertrag',aktiv:true,ueberschneidet:[]},
     {id:'c',anbieter:'Alt Energie',von:(today.getFullYear()-3)+'-08-29',bis:iso(new Date(today.getFullYear(),today.getMonth()-4,14)),arbeitspreis_ct:30,grundpreis_eur:120,grundpreis_einheit:'jahr',notiz:'',aktiv:false,ueberschneidet:[]}],
   luecken:[],

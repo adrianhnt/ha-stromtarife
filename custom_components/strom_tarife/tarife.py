@@ -60,7 +60,7 @@ def _parse_date(value: Any, field: str, required: bool) -> date | None:
         raise ValidationError(f"{field}: ungültiges Datum") from err
 
 
-def _parse_number(value: Any, field: str) -> float:
+def _parse_number(value: Any, field: str, decimals: int = 2) -> float:
     if value in (None, ""):
         raise ValidationError(f"{field} fehlt")
     try:
@@ -69,7 +69,7 @@ def _parse_number(value: Any, field: str) -> float:
         raise ValidationError(f"{field}: keine Zahl") from err
     if number < 0:
         raise ValidationError(f"{field} darf nicht negativ sein")
-    return round(number, 2)
+    return round(number, decimals)
 
 
 def _parse_unit(value: Any) -> str:
@@ -188,7 +188,7 @@ class StromTarife:
             "anbieter": anbieter,
             "von": von.isoformat() if von else None,
             "bis": bis.isoformat() if bis else None,
-            "arbeitspreis_ct": _parse_number(data.get("arbeitspreis_ct"), "Arbeitspreis"),
+            "arbeitspreis_ct": _parse_number(data.get("arbeitspreis_ct"), "Arbeitspreis", 3),
             "grundpreis_eur": _parse_number(data.get("grundpreis_eur", 0) or 0, "Grundpreis"),
             "grundpreis_einheit": _parse_unit(data.get("grundpreis_einheit")),
             "notiz": str(data.get("notiz") or "").strip(),

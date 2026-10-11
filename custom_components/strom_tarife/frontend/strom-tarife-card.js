@@ -11,6 +11,11 @@ const BASE_KEY = "strom-tarife-diagramm-grundpreis";
 
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const num2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Arbeitspreis: bis zu 3 Nachkommastellen (z. B. 28,317 ct/kWh)
+const num3 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+// Eingabefelder: ohne Tausenderpunkt, sonst liest das Backend „1.234,56“ nicht
+const inp2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+const inp3 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 3, useGrouping: false });
 
 const fmtDate = (iso) => {
   if (!iso) return "";
@@ -867,7 +872,7 @@ class StromTarifeCard extends HTMLElement {
         return `<tr class="${v.aktiv ? "active" : ""}">
           <td>${esc(v.anbieter)}${chips}</td>
           <td class="nowrap">${fmtDate(v.von)} – ${v.bis ? fmtDate(v.bis) : "offen"}</td>
-          <td class="num">${num2.format(v.arbeitspreis_ct)} ct/kWh</td>
+          <td class="num">${num3.format(v.arbeitspreis_ct)} ct/kWh</td>
           <td class="num">${gpText(v)}</td>
           <td class="note">${esc(v.notiz)}</td>
           ${actions}
@@ -958,7 +963,7 @@ class StromTarifeCard extends HTMLElement {
         <div class="actions"><button class="plain" id="cancel">Abbrechen</button><button class="danger" id="confirm-delete">Löschen</button></div>
       </div></div>`;
     }
-    const n = (x) => (x === null || x === undefined || x === "" ? "" : num2.format(x));
+    const n = (x, f = inp2) => (x === null || x === undefined || x === "" ? "" : f.format(x));
     return `<div class="overlay"><div class="dialog">
       <h3>${v.id ? "Vertrag bearbeiten" : "Neuer Vertrag"}</h3>
       <label>Anbieter</label><input id="f-anbieter" value="${esc(v.anbieter)}">
@@ -967,7 +972,7 @@ class StromTarifeCard extends HTMLElement {
         <div><label>Gültig bis <span class="unit">(leer = offen)</span></label><input id="f-bis" type="date" value="${esc(v.bis)}"></div>
       </div>
       <div class="row">
-        <div><label>Arbeitspreis <span class="unit">ct/kWh</span></label><input id="f-ap" inputmode="decimal" value="${esc(n(v.arbeitspreis_ct))}" placeholder="z. B. 31,87"></div>
+        <div><label>Arbeitspreis <span class="unit">ct/kWh</span></label><input id="f-ap" inputmode="decimal" value="${esc(n(v.arbeitspreis_ct, inp3))}" placeholder="z. B. 28,317"></div>
         <div><label>Grundpreis <span class="unit">€</span></label><input id="f-gp" inputmode="decimal" value="${esc(n(v.grundpreis_eur))}" placeholder="z. B. 156,38"></div>
         <div><label>pro</label><select id="f-gpe"><option value="jahr"${v.grundpreis_einheit !== "monat" ? " selected" : ""}>Jahr</option><option value="monat"${v.grundpreis_einheit === "monat" ? " selected" : ""}>Monat</option></select></div>
       </div>

@@ -126,5 +126,10 @@ async def run3():
     assert t.grundpreis_pro_monat(c) == 14.02
     assert abs(t.grundpreis_pro_monat(st.contracts[0]) - 156.38 / 12) < 1e-9
     print("grundpreis ok")
+    c = await st.async_save_contract({"anbieter": "Z", "von": "2027-01-01", "arbeitspreis_ct": "28,317", "grundpreis_eur": "12,345"})
+    assert c["arbeitspreis_ct"] == 28.317 and c["grundpreis_eur"] == 12.35, c
+    c = await st.async_save_contract({**c, "arbeitspreis_ct": "28,3174"})
+    assert c["arbeitspreis_ct"] == 28.317, c
+    print("arbeitspreis 3 Stellen ok")
 asyncio.run(run3())
 print("OK")

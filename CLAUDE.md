@@ -34,7 +34,7 @@ docs/images/       Screenshots für die READMEs (aus dev/out/, nur Mock-Daten)
 ## Datenmodell
 
 - Speicher: `.storage/strom_tarife.vertraege` mit den Schlüsseln `vertraege` und `ablesungen`.
-- Vertrag: `id, anbieter, von, bis (None = offen), arbeitspreis_ct (2 Nachkommastellen), grundpreis_eur, grundpreis_einheit ("jahr"|"monat"), notiz`. Überschneiden sich Verträge, gilt der mit dem späteren Beginn. Lücken kosten 0 €.
+- Vertrag: `id, anbieter, von, bis (None = offen), arbeitspreis_ct (3 Nachkommastellen), grundpreis_eur, grundpreis_einheit ("jahr"|"monat"), notiz`. Überschneiden sich Verträge, gilt der mit dem späteren Beginn. Lücken kosten 0 €.
 - Grundpreis fließt **nicht** in die Kosten-Statistiken ein. Er erscheint nur in der Karte (`diagramm` in €, abschaltbar). `grundpreis_pro_jahr()` rechnet Monatswerte ×12, `grundpreis_pro_monat()` Jahreswerte ÷12. Die Migration setzt eine fehlende Einheit auf „jahr“, ohne die Werte umzurechnen.
 - Ablesung: `id, zeitpunkt ("YYYY-MM-DDTHH:MM", lokale Zeit), stand (kWh), notiz`. Validierung: nicht in der Zukunft, Stand monoton zu früheren und späteren Ablesungen.
 

@@ -79,7 +79,7 @@ class _TarifSensor(SensorEntity):
 
 class ArbeitspreisSensor(_TarifSensor):
     _attr_native_unit_of_measurement = "ct/kWh"
-    _attr_suggested_display_precision = 2
+    _attr_suggested_display_precision = 3
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:cash-clock"
 
