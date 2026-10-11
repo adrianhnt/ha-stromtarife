@@ -282,7 +282,6 @@ const STYLE = `
   table.share .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
   table.share tfoot td { font-weight: 500; border-bottom: none; }
   table.share .pct { color: var(--secondary-text-color); }
-  .entry #e-stand { font-size: 1.4em; padding: 10px 12px; font-variant-numeric: tabular-nums; }
   .entry .actions { margin-top: 14px; }
   .entry .actions button { padding: 10px 20px; }
   .entry .last { margin-top: 0; }
@@ -981,7 +980,7 @@ class StromTarifeCard extends HTMLElement {
     }
     return `${head}<form class="entry" id="entry" novalidate>
       <label for="e-stand">Zählerstand <span class="unit">kWh</span></label>
-      <input id="e-stand" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${esc(e.stand)}" placeholder="z. B. 25362,0">
+      <input id="e-stand" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="${esc(e.stand)}">
       <label for="e-zeit">Abgelesen am</label><input id="e-zeit" type="datetime-local" value="${esc(e.zeitpunkt)}">
       <label for="e-notiz">Notiz <span class="unit">(optional)</span></label><input id="e-notiz" autocomplete="off" value="${esc(e.notiz)}">
       ${e.error ? `<div class="err">${esc(e.error)}</div>` : ""}

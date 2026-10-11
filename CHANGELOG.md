@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow `version` in `custom_components/strom_tarife/manifest.json`; each version is published as a GitHub release.
 
+## 0.8.2 (2026-10-11)
+
+- Card view `ablesung`: the meter reading field has the same size as the other fields and no example placeholder
+
 ## 0.8.1 (2026-10-11)
 
 - Card: date fields no longer overflow the form and are no longer centered in Safari and on iOS
