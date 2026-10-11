@@ -14,6 +14,9 @@ const shots = [
   ['diagramm-dunkel', { theme: 'dark', ansicht: 'diagramm' }, 900],
   ['diagramm-hell', { theme: 'light', ansicht: 'diagramm' }, 900],
   ['diagramm-schmal', { theme: 'dark', ansicht: 'diagramm', breite: '358' }, 390],
+  // mehr als 8 Geräte: alle einzeln, keine Zusammenfassung
+  ['diagramm-viele-dunkel', { theme: 'dark', ansicht: 'diagramm', geraete: '12' }, 900],
+  ['diagramm-viele-hell', { theme: 'light', ansicht: 'diagramm', geraete: '12' }, 900],
   ['diagramm-tag-kwh', { theme: 'dark', ansicht: 'diagramm', zeitraum: 'tag', einheit: 'kwh' }, 900],
   ['diagramm-gesamt', { theme: 'light', ansicht: 'diagramm', zeitraum: 'gesamt' }, 900],
   ['diagramm-jahr', { theme: 'dark', ansicht: 'diagramm', zeitraum: 'jahr' }, 900],

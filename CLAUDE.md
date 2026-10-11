@@ -94,7 +94,7 @@ Weitere Regeln für die Karte:
   - dunkel: `#3987e5 #d95926 #199e70 #c98500 #d55181 #008300 #9085e9 #e66767`
   - „Nicht erfasst“: grau, hell `#b4b2a9`, dunkel `#6f6e69`
   - „Grundpreis“: hell `#5f5e5a`, dunkel `#a8a69d`
-  - mehr als 8 Geräte werden zu „Weitere Geräte“ zusammengefasst
+  - alle Geräte werden einzeln gezeigt, nie zusammengefasst. Ab dem 9. Gerät gibt es eine feste Farbe aus dem Index (HSL, Goldener Winkel ab Farbton 185)
   - Balken höchstens 24 px breit, oben 4 px gerundet, 2 px Lücke zwischen Segmenten
   - keine zweite y-Achse
   - Tooltip beim Überfahren

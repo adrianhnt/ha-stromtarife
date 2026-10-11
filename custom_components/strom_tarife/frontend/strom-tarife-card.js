@@ -585,17 +585,13 @@ class StromTarifeCard extends HTMLElement {
     const grey = dark ? "#6f6e69" : "#b4b2a9";
     const baseColor = dark ? "#a8a69d" : "#5f5e5a";
     const showBase = !c.kwh && this._withBase;
-    // Mehr als 8 Geräte: Rest in „Weitere Geräte“ zusammenfassen (keine erfundenen Farben)
-    let names = [...c.series];
+    // Alle Geräte einzeln zeigen. Ab dem 9. Gerät gibt es keine Palettenfarbe mehr:
+    // dann eine feste Farbe aus dem Index (Goldener Winkel), damit jedes Gerät seine Farbe behält.
+    const names = [...c.series];
     let buckets = c.buckets.map((b) => ({ ...b, values: [...b.values] }));
-    let totals = [...c.totals];
-    if (names.length > 8) {
-      const fold = (arr) => [...arr.slice(0, 7), arr.slice(7).reduce((a, v) => a + v, 0)];
-      names = [...names.slice(0, 7), "Weitere Geräte"];
-      buckets = buckets.map((b) => ({ ...b, values: fold(b.values) }));
-      totals = fold(totals);
-    }
-    const colors = names.map((_, i) => palette[i]);
+    const totals = [...c.totals];
+    const extraColor = (i) => `hsl(${Math.round((185 + (i - palette.length) * 137.508) % 360)}, ${dark ? 55 : 60}%, ${dark ? 62 : 45}%)`;
+    const colors = names.map((_, i) => (i < palette.length ? palette[i] : extraColor(i)));
     // Ausgeblendete Reihen zählen nicht mit – Farben bleiben am Gerät, Anteile beziehen sich auf das Angezeigte
     const hidden = this._hidden;
     const series = [

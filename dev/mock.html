@@ -25,6 +25,8 @@ document.body.className = theme;
 document.getElementById('host').style.maxWidth = (q.get('breite') || '820') + 'px';
 
 const names = ['Kühlschrank','Waschmaschine','Spülmaschine','3D Drucker','Fernseher','Multimedia','Netzwerk','Arbeitsplatz'];
+// ?geraete=12: weitere Testgeräte, um mehr als 8 Reihen zu prüfen
+for (let i = names.length; i < Number(q.get('geraete') || 0); i++) names.push('Gerät ' + (i + 1));
 const reihen = [{id:'gesamt',name:'Gesamt',source:'strom_tarife:zaehler',statistic_id:'strom_tarife:kosten_gesamt'},
   ...names.map((n,i)=>({id:'d'+i,name:n,source:'sensor.geraet_'+i,statistic_id:'strom_tarife:kosten_geraet_'+i}))];
 const today = new Date();
@@ -52,10 +54,10 @@ function stats(msg){
   const starts=[]; while(d<en){starts.push(d);d=step(d);}
   const rates=[0.55,0.2,0.15,0.08,0.12,0.1,0.25,0.4];
   for (const id of msg.statistic_ids){
-    const f=id.includes('kosten')?0.24:1; const isTot=id.endsWith('zaehler')||id.endsWith('gesamt'); const k=isTot?-1:Number(id.slice(-1));
+    const f=id.includes('kosten')?0.24:1; const isTot=id.endsWith('zaehler')||id.endsWith('gesamt'); const k=isTot?-1:Number(id.match(/(\d+)$/)[1]);
     out[id]=starts.map((s,j)=>{const e=step(s);const a=Math.max(s,st),b=Math.min(e,en,isTot?lastReading:new Date());if(b<=a)return null;
       const days=(b-a)/864e5;const wob=1+0.3*Math.sin(j*1.7+k);
-      const v=isTot?4.5*days*wob:rates[k]*days*wob;return {start:s.getTime(),change:v*f};}).filter(Boolean);
+      const v=isTot?4.5*days*wob:rates[k%rates.length]*days*wob;return {start:s.getTime(),change:v*f};}).filter(Boolean);
   }
   return out;
 }
