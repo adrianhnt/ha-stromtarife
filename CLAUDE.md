@@ -4,7 +4,14 @@ Custom Integration für Home Assistant (Domain `strom_tarife`), verteilt über H
 
 **Öffentliches Repo: keine persönlichen Daten** (Verträge, Zählerstände, Adressen, Tokens, URLs der eigenen Instanz) in Code, Tests, Commits oder Doku.
 
-Sprache: UI-Texte, Kommentare, Commit-Messages und Doku auf Deutsch. Zahlen im Frontend mit `de-DE` formatieren.
+Zielgruppe: Stromverträge in Deutschland (immer EUR), Oberfläche auf Deutsch und Englisch (Karte bisher nur Deutsch, siehe #17).
+
+Sprache:
+- Deutsch: UI-Texte, Kommentare, Commit-Messages, `README.de.md`, diese Datei. Zahlen im Frontend mit `de-DE` formatieren.
+- Englisch: GitHub-Issues (Backlog), `README.md`, `CHANGELOG.md` und Release-Notes.
+- Beide READMEs immer gemeinsam ändern. Bilder darin mit absoluter `raw.githubusercontent.com`-URL, weil HACS relative Pfade nicht anzeigt.
+
+Backlog: GitHub-Issues mit Labels `phase-1: release`, `phase-2: usability`, `phase-3: growth` und `decision`, `enhancement`, `bug`, `documentation`, `infra`. Commits verweisen mit `Refs #n` bzw. `Closes #n`. Gearbeitet wird direkt auf `main`, ohne Pull Requests.
 
 ## Aufbau
 
@@ -18,7 +25,10 @@ custom_components/strom_tarife/
   config_flow.py   nur Geräteauswahl (Energie-Sensoren, Option `geraete`)
   const.py         METER_STAT, STAT_PREFIX, TOTAL_ID="gesamt", UPDATE_MINUTE=12
   frontend/strom-tarife-card.js   Karte (Vanilla-JS-Web-Component, kein Build-Schritt)
-dev/               lokale Testumgebung (Mock-hass, Screenshots, Python-Stub-Test)
+  brand/           icon.png, icon@2x.png (ab HA 2026.3 lokal geladen; Quelle dev/brand/icon.svg, rendern mit dev/brand.mjs)
+dev/               lokale Testumgebung (Mock-hass, Screenshots, Python-Stub-Test, Icon-Quelle)
+docs/images/       Screenshots für die READMEs (aus dev/out/, nur Mock-Daten)
+.github/workflows/ validate.yaml (HACS Action, Hassfest, Stub-Test, node --check), release.yaml (Release aus Tag)
 ```
 
 ## Datenmodell
@@ -104,13 +114,16 @@ Weitere Regeln für die Karte:
 
 - Python: `python3 dev/test_tarife_stub.py` (HA-Module sind gestubbt, braucht Python ≥ 3.12, sonst nichts). Muss mit `OK` enden.
 - Karte: `dev/mock.html?theme=dark|light&ansicht=diagramm|vertraege|zaehler|kosten&grundpreis=0`, direkt im Browser öffnen. Mock-hass mit synthetischen Statistiken.
-- Screenshots: `cd dev && npm install && node screenshot.mjs`. Das Ergebnis landet in `dev/out/`. Screenshots immer ansehen, bevor eine UI-Änderung fertig ist: dunkel, hell und schmal (390 px).
+- Screenshots: `cd dev && npm install && node screenshot.mjs` (in der Cloud-Umgebung mit `PW_CHROMIUM=/opt/pw-browsers/chromium`). Das Ergebnis landet in `dev/out/`. Screenshots immer ansehen, bevor eine UI-Änderung fertig ist: dunkel, hell und schmal (390 px).
 - `node --check custom_components/strom_tarife/frontend/strom-tarife-card.js` vor jedem Commit.
 
 ## Release
 
-1. `version` in `manifest.json` erhöhen und die README anpassen.
-2. Commit und Push auf `main`. Es gibt keine GitHub-Releases, HACS nimmt den Commit-Hash als Version.
-3. In HA per HACS aktualisieren: Repo-ID `1389007769`, erst „Update information“, dann „Download“. Über den HA-MCP geht das mit `ha_manage_hacs` und `update_information`, dann `download`.
-4. Bei Python-Änderungen braucht es einen **Neustart von HA, aber nur nach ausdrücklichem OK des Nutzers**. Bei reinen JS-Änderungen reicht ein hartes Neuladen im Browser.
-5. Danach im echten Dashboard prüfen: Konsole ohne Fehler und Werte plausibel.
+Mindestversion: HA 2025.11 (`hacs.json`). Erst ab da hat `statistics_meta` die Spalte `unit_class`; ältere Versionen brechen beim Schreiben der Statistik ab. Neue Recorder- oder Helper-APIs nur nach Prüfung gegen die Mindestversion verwenden (Wheel von PyPI laden und nachsehen).
+
+1. `version` in `manifest.json` erhöhen, Abschnitt `## X.Y.Z (Datum)` in `CHANGELOG.md` (Englisch), beide READMEs anpassen.
+2. Commit und Push auf `main`, CI abwarten.
+3. Tag `vX.Y.Z` setzen und pushen. `release.yaml` prüft, ob Tag und Manifest-Version passen, und legt das GitHub-Release mit dem Changelog-Abschnitt an. HACS bietet nur noch Releases an, keine einzelnen Commits.
+4. In HA per HACS aktualisieren: Repo-ID `1389007769`, erst „Update information“, dann „Download“. Über den HA-MCP geht das mit `ha_manage_hacs` und `update_information`, dann `download`.
+5. Bei Python-Änderungen braucht es einen **Neustart von HA, aber nur nach ausdrücklichem OK des Nutzers**. Bei reinen JS-Änderungen reicht ein hartes Neuladen im Browser.
+6. Danach im echten Dashboard prüfen: Konsole ohne Fehler und Werte plausibel.
