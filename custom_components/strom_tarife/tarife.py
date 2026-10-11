@@ -113,7 +113,7 @@ class StromTarife:
         data = await self._store.async_load() or {}
         self.contracts = data.get("vertraege", [])
         self.readings = data.get("ablesungen", [])
-        # Bis v0.2.x gab es keine Einheit; Adrian hat alle Grundpreise pro Jahr eingetragen
+        # Bis v0.2.x gab es keine Einheit, Grundpreise waren immer Jahrespreise
         migrated = False
         for contract in self.contracts:
             if "grundpreis_einheit" not in contract:
