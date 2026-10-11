@@ -91,12 +91,15 @@ Alle Entitäten gehören zum Gerät „Stromtarife“. Ihre Entity-IDs hängen v
 | Letzte Ablesung (kWh, Attribut `abgelesen`) | `sensor.stromtarife_zahlerstand` | `sensor.stromtarife_meter_reading` |
 | Kosten neu berechnen | `button.stromtarife_kosten_neu_berechnen` | `button.stromtarife_recalculate_costs` |
 
+## Integration entfernen
+
+Beim Entfernen der Integration werden alle ihre Statistiken (`strom_tarife:*`) gelöscht. Verträge und Ablesungen bleiben erhalten und sind nach erneutem Hinzufügen wieder da. Wird ein Gerät in den Optionen abgewählt, verschwindet auch seine Kostenstatistik.
+
 ## Grenzen
 
 - Zählerwerte kommen nur aus manuellen Ablesungen. Ein Zähler-Sensor als Alternative ist geplant ([#10](https://github.com/adrianhnt/ha-stromtarife/issues/10)).
 - Ein fester Arbeitspreis je Vertrag. HT/NT-Tarife, dynamische Tarife und Einspeisevergütung werden nicht unterstützt.
 - Preise in Euro, gebaut für den deutschen Markt.
-- Wird die Integration entfernt, bleiben ihre Statistiken sowie die gespeicherten Verträge und Ablesungen derzeit in Home Assistant ([#12](https://github.com/adrianhnt/ha-stromtarife/issues/12)).
 
 ## Entwicklung
 

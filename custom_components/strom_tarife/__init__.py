@@ -15,7 +15,7 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CARD_FILE, DOMAIN, SERVICE_RECALCULATE, STATIC_URL, UPDATE_MINUTE
-from .tarife import StromTarife
+from .tarife import StromTarife, async_clear_own_statistics
 from .websocket import async_register_websocket_commands
 
 type StromTarifeConfigEntry = ConfigEntry[StromTarife]
@@ -77,3 +77,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: StromTarifeConfigEn
 
 async def async_unload_entry(hass: HomeAssistant, entry: StromTarifeConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: StromTarifeConfigEntry) -> None:
+    """Statistiken löschen. Verträge und Ablesungen bleiben für eine Neuinstallation erhalten."""
+    await async_clear_own_statistics(hass)

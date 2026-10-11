@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, date, datetime, timedelta
+from functools import partial
 import logging
 from typing import Any
 import uuid
@@ -17,6 +18,7 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    get_metadata,
     statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -77,6 +79,17 @@ def _parse_unit(value: Any) -> str:
     if unit not in ("monat", "jahr"):
         raise ValidationError("Grundpreis: Einheit muss Monat oder Jahr sein")
     return unit
+
+
+async def async_clear_own_statistics(hass: HomeAssistant, keep: set[str] | frozenset[str] = frozenset()) -> list[str]:
+    """Alle Statistiken dieser Integration löschen, außer denen in keep."""
+    instance = get_instance(hass)
+    meta = await instance.async_add_executor_job(partial(get_metadata, hass, statistic_source=DOMAIN))
+    stale = sorted(set(meta) - set(keep))
+    if stale:
+        instance.async_clear_statistics(stale)
+        _LOGGER.debug("Statistiken gelöscht: %s", stale)
+    return stale
 
 
 def grundpreis_pro_jahr(contract: dict[str, Any]) -> float:
@@ -387,6 +400,14 @@ class StromTarife:
             async_dispatcher_send(self.hass, SIGNAL_UPDATED)
             errors = []
             try:
+                if full and not nur_zaehler:
+                    # Abgewählte Geräte: deren Kostenstatistik verwaist sonst
+                    keep = {METER_STAT} | {s["statistic_id"] for s in self.series()}
+                    try:
+                        await async_clear_own_statistics(self.hass, keep)
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.exception("Aufräumen der Statistiken fehlgeschlagen")
+                        errors.append(f"Aufräumen: {err}")
                 if full:
                     try:
                         self._write_meter()

@@ -29,6 +29,8 @@ def statistics_during_period(hass, start, end, ids, period, units, types_):
 def get_last_statistics(hass, n, sid, conv, types_):
     rows = IMPORTED.get(sid)
     return {sid: rows[-n:]} if rows else {}
+def get_metadata(hass, *, statistic_ids=None, statistic_type=None, statistic_source=None):
+    return {i: (0, {"source": "strom_tarife"}) for i in IMPORTED}
 def add_ext(hass, meta, stats):
     cur = {r["start"]: r for r in IMPORTED.get(meta["statistic_id"], [])}
     for s in stats: cur[s["start"].timestamp()] = {"start": s["start"].timestamp(), "sum": s["sum"]}
@@ -37,7 +39,7 @@ def add_ext(hass, meta, stats):
 mod("homeassistant"); mod("homeassistant.components")
 mod("homeassistant.components.recorder", get_instance=lambda h: inst)
 mod("homeassistant.components.recorder.models", StatisticData=dict, StatisticMeanType=types.SimpleNamespace(NONE=0), StatisticMetaData=dict)
-mod("homeassistant.components.recorder.statistics", async_add_external_statistics=add_ext, get_last_statistics=get_last_statistics, statistics_during_period=statistics_during_period)
+mod("homeassistant.components.recorder.statistics", async_add_external_statistics=add_ext, get_last_statistics=get_last_statistics, statistics_during_period=statistics_during_period, get_metadata=get_metadata)
 mod("homeassistant.config_entries", ConfigEntry=object)
 mod("homeassistant.core", HomeAssistant=object)
 mod("homeassistant.exceptions", HomeAssistantError=Exception)
@@ -132,4 +134,18 @@ async def run3():
     assert c["arbeitspreis_ct"] == 28.317, c
     print("arbeitspreis 3 Stellen ok")
 asyncio.run(run3())
+
+async def run4():
+    # Abgewähltes Gerät: Statistik wird bei voller Neuberechnung gelöscht
+    IMPORTED["strom_tarife:kosten_alt"] = [{"start": 0.0, "sum": 1.0}]
+    await m.async_recalculate(full=True, nur_zaehler=True)
+    assert "strom_tarife:kosten_alt" in IMPORTED  # nur Zähler: kein Aufräumen
+    await m.async_recalculate(full=True)
+    assert "strom_tarife:kosten_alt" not in IMPORTED and "strom_tarife:kosten_z" in IMPORTED, list(IMPORTED)
+    assert "strom_tarife:zaehler" in IMPORTED and "strom_tarife:kosten_gesamt" in IMPORTED
+    # Integration entfernt: alles weg
+    removed = await t.async_clear_own_statistics(hass)
+    assert not IMPORTED and "strom_tarife:kosten_z" in removed, IMPORTED
+    print("aufraeumen ok")
+asyncio.run(run4())
 print("OK")

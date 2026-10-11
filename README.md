@@ -93,12 +93,15 @@ All entities belong to the device "Stromtarife". Their entity IDs depend on the 
 | Last meter reading (kWh, attribute `abgelesen`) | `sensor.stromtarife_zahlerstand` | `sensor.stromtarife_meter_reading` |
 | Recalculate costs | `button.stromtarife_kosten_neu_berechnen` | `button.stromtarife_recalculate_costs` |
 
+## Removing the integration
+
+Removing the integration deletes all its statistics (`strom_tarife:*`). Contracts and meter readings are kept, so they are back when you add the integration again. When you deselect a device in the options, its cost statistic is deleted as well.
+
 ## Limitations
 
 - Meter data comes from manual readings only. Using a meter sensor instead is planned ([#10](https://github.com/adrianhnt/ha-stromtarife/issues/10)).
 - One fixed energy price per contract. Time-of-use tariffs (HT/NT), dynamic prices and feed-in remuneration are not supported.
 - Prices in EUR. The integration is built for the German market.
-- When you remove the integration, its statistics and stored contracts and readings currently stay in Home Assistant ([#12](https://github.com/adrianhnt/ha-stromtarife/issues/12)).
 
 ## Development
 

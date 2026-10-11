@@ -51,6 +51,7 @@ docs/images/       Screenshots für die READMEs (aus dev/out/, nur Mock-Daten)
   - Knopf, Dienst `strom_tarife.neu_berechnen` und WS `neu_berechnen`: alles, wird nur eingeplant.
 - Der Worker wird **nie abgebrochen**: eine Schleife mit `_full_requested` / `_full_scope_all`. Ein abgebrochener Lauf hat früher geleerte Statistiken hinterlassen.
 - Schreiben: erst `get_instance(hass).async_clear_statistics([...])`, dann `async_add_external_statistics`.
+- Aufräumen (`async_clear_own_statistics`): Bei jeder vollen Neuberechnung (nicht `nur_zaehler`) werden Statistiken mit `source=strom_tarife` gelöscht, die zu keiner Reihe mehr gehören (abgewählte Geräte). `async_remove_entry` löscht alle; der Speicher mit Verträgen und Ablesungen bleibt.
 
 ### Fakten zur Recorder-API (HA 2026.9)
 
