@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions follow `version` in `custom_components/strom_tarife/manifest.json`; each version is published as a GitHub release.
 
+## 0.8.1 (2026-10-11)
+
+- Card: date fields no longer overflow the form and are no longer centered in Safari and on iOS
+
 ## 0.8.0 (2026-10-11)
 
 - New card view `ansicht: ablesung`: a form to enter a meter reading directly in the card, without a dialog. Put it on its own dashboard view and bookmark it, or open it from the Companion app with `homeassistant://navigate/<dashboard>/<view>` ([#22](https://github.com/adrianhnt/ha-stromtarife/issues/22))
