@@ -224,6 +224,9 @@ const STYLE = `
   label { display: block; font-size: 0.85em; color: var(--secondary-text-color); margin: 10px 0 4px; }
   input, textarea { box-sizing: border-box; width: 100%; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--secondary-background-color, transparent); color: var(--primary-text-color); }
   textarea { min-height: 70px; resize: vertical; }
+  /* Safari/iOS: Datumsfelder ignorieren sonst die Breite (ragen rechts raus) und zentrieren den Text */
+  input[type="date"], input[type="datetime-local"] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; min-height: 2.5em; text-align: left; }
+  input::-webkit-date-and-time-value { text-align: left; }
   .row { display: flex; gap: 12px; }
   .row > div { flex: 1; }
   .unit { font-size: 0.8em; color: var(--secondary-text-color); }
